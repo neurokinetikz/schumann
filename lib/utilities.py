@@ -1274,3 +1274,131 @@ def plot_aperiodic_slope_timeseries(
     plt.show()
 
     return fig, axes
+
+# =========================================
+# GRAPH EEG TIMELINE BY BAND FOR EACH ELECTRODE
+# =========================================
+def graph_eeg_timeline(df, electrodes, ranges=RANGES, time_col='Timestamp', start_time=None, end_time=None):
+    """
+    Create a timeline plot of EEG power for each frequency band by electrode.
+
+    Parameters:
+    - df: DataFrame containing EEG data with band power columns like 'POW.EEG.F3.alpha'.
+    - electrodes: list of electrode names (e.g. ['F3','F4','O1','O2']).
+    - ranges: dict of band ranges (keys are band names like 'delta','theta','alpha','beta','gamma').
+    - time_col: name of the time column (default 'Timestamp').
+    - start_time: float | None, lower bound of time window in seconds.
+    - end_time: float | None, upper bound of time window in seconds.
+    """
+
+    bands = list(ranges.keys())
+    n_bands = len(bands)
+    n_elec = len(electrodes)
+
+    fig, axes = plt.subplots(n_bands, n_elec, figsize=(4*n_elec, 3*n_bands), sharex=True, sharey=False)
+    if n_bands == 1:
+        axes = [axes]
+    if n_elec == 1:
+        axes = [[ax] for ax in axes]
+
+    for i, b in enumerate(bands):
+        for j, e in enumerate(electrodes):
+            ax = axes[i][j]
+            pow_col = f"POW.EEG.{e}.{b}"
+            if pow_col not in df.columns:
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+                ax.set_axis_off()
+                continue
+
+            t = df[time_col]
+            y = df[pow_col]
+
+            # Apply time window mask if specified
+            mask = pd.Series(True, index=df.index)
+            if start_time is not None:
+                mask &= (t >= start_time)
+            if end_time is not None:
+                mask &= (t <= end_time)
+
+            sns.lineplot(x=t[mask], y=y[mask], ax=ax, color='blue')
+            ax.set_title(f"{e} — {b}")
+            ax.set_ylabel("Power (µV²)")
+
+    for ax in axes[-1]:
+        ax.set_xlabel("Time (s)")
+
+    plt.tight_layout()
+    plt.show()
+
+# ==========================
+# EEG TIMELINE GRID BY BAND × ELECTRODE
+# ==========================
+def plot_eeg_timeline_grid(df, electrodes, ranges=RANGES, time_col='Timestamp',
+                           start_time=None, end_time=None, sharey=False,
+                           figsize_per_cell=(4.0, 2.2)):
+    """
+    Create a timeline plot for each frequency band by electrode (grid of subplots).
+
+    Grid layout: rows = bands (order of keys in `ranges`), columns = electrodes.
+    Each cell shows the time-series for that electrode's band power ('POW.EEG.{e}.{band}').
+
+    Parameters
+    ----------
+    df : DataFrame
+        Must include a time column and band-power columns such as 'POW.EEG.F3.alpha'.
+    electrodes : list[str]
+        Electrode names, e.g. ['F3','F4','O1','O2'].
+    ranges : dict[str, (low, high)]
+        Band definitions; keys define the row order in the grid.
+    time_col : str
+        Timestamp column name in seconds.
+    start_time, end_time : float | None
+        Optional time window.
+    sharey : bool
+        Share y-axis across subplots (per column) to facilitate comparison.
+    figsize_per_cell : (float, float)
+        Size per subplot cell; overall figure scales with rows × cols.
+    """
+    bands = list(ranges.keys())
+    n_rows = len(bands)
+    n_cols = len(electrodes)
+
+    fig_w = figsize_per_cell[0] * max(1, n_cols)
+    fig_h = figsize_per_cell[1] * max(1, n_rows)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_w, fig_h), sharex=True, sharey=sharey)
+    # Normalize axes indexing to 2D
+    if n_rows == 1 and n_cols == 1:
+        axes = [[axes]]
+    elif n_rows == 1:
+        axes = [axes]
+    elif n_cols == 1:
+        axes = [[ax] for ax in axes]
+
+    t_all = df[time_col]
+    mask = pd.Series(True, index=df.index)
+    if start_time is not None:
+        mask &= (t_all >= start_time)
+    if end_time is not None:
+        mask &= (t_all <= end_time)
+
+    t = t_all[mask]
+
+    for r, band in enumerate(bands):
+        for c, e in enumerate(electrodes):
+            ax = axes[r][c]
+            col = f"POW.EEG.{e}.{band}"
+            if col in df.columns:
+                y = df[col][mask]
+                ax.plot(t, y, linewidth=1.0)
+            else:
+                ax.text(0.5, 0.5, 'missing', ha='center', va='center', fontsize=9, color='crimson', transform=ax.transAxes)
+            if r == 0:
+                ax.set_title(e)
+            if c == 0:
+                ax.set_ylabel(f"{band}\nPower (µV²)")
+            if r == n_rows - 1:
+                ax.set_xlabel("Time (s)")
+
+    fig.suptitle("EEG Band Timelines by Electrode", y=0.995)
+    fig.tight_layout()
+    plt.show()
