@@ -2,3 +2,5 @@ exports*
 data/*
 *pycache*
 .ipynb_checkpoints/
+embedding_frames*
+session_exports/*
