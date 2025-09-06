@@ -4,3 +4,4 @@ data/*
 .ipynb_checkpoints/
 embedding_frames*
 session_exports/*
+.DS_Store

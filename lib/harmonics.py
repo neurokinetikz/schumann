@@ -281,3 +281,252 @@ def detect_and_plot_schumann_wavelet(
         plot_piano_roll(t, events, f0)
         plot_sai(t, sai)
     return out
+
+"""
+Schumann Micro-grid + Heatmap Ridge Overlay (fs=128)
+----------------------------------------------------
+Adds fused TF heatmaps with ridge overlays to the drift tracker. For each harmonic k:
+- computes CWT magnitude on a micro-grid around k*f0
+- overlays the tracked ridge f_k(t) on the grid heatmap
+- collects figures + returns event/coincidence tables
+
+Entry point:
+    fused = detect_and_plot_schumann_microgrid_with_heatmaps(...)
+Outputs:
+    fused['per_harmonic'][k-1] has: 'grid', 'mags', 'ridge_hz', plus figs displayed when show=True
+"""
+from __future__ import annotations
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from typing import Dict, List, Tuple
+from scipy import signal
+
+# ---------- reuse util from prior modules ----------
+
+def _get_fs(RECORDS: pd.DataFrame, time_col: str) -> float:
+    if 'infer_fs_from_records' in globals():
+        try:
+            return float(infer_fs_from_records(RECORDS, time_col=time_col))
+        except Exception:
+            pass
+    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    dt = np.diff(t)
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    if dt.size == 0:
+        raise ValueError('Cannot infer fs from time column')
+    return 1.0 / np.median(dt)
+
+
+def _smooth(x: np.ndarray, fs: float, smooth_sec: float) -> np.ndarray:
+    if smooth_sec <= 0:
+        return x
+    n = max(1, int(round(fs * smooth_sec)))
+    if n <= 1:
+        return x
+    w = np.hanning(n); w /= w.sum()
+    return np.convolve(x, w, mode='same')
+
+
+def _rolling_median_mad(x: np.ndarray, win: int):
+    if win < 3:
+        med = signal.medfilt(x, kernel_size=3)
+        mad = np.median(np.abs(x - med)) + 1e-12
+        return med, np.full_like(x, mad)
+    pad = win // 2
+    xp = np.pad(x, (pad, pad), mode='reflect')
+    med = np.zeros_like(x); mad = np.zeros_like(x)
+    for i in range(x.size):
+        s = slice(i, i + win)
+        m = np.median(xp[s])
+        med[i] = m
+        mad[i] = np.median(np.abs(xp[s] - m)) + 1e-12
+    return med, mad
+
+
+def _morlet_kernel(fs: float, f0: float, w: float = 6.0, dur_sec: float = 2.0) -> np.ndarray:
+    N = int(round(fs * dur_sec)); N += (N % 2 == 0)
+    t = np.arange(-(N//2), N//2 + 1) / fs
+    sigma_t = w / (2 * np.pi * f0)
+    gauss = np.exp(-0.5 * (t / sigma_t)**2)
+    carrier = np.exp(1j * 2 * np.pi * f0 * t)
+    psi = gauss * (carrier - np.exp(-(2*np.pi**2) * (sigma_t**2) * (f0**2)))
+    psi /= np.sqrt(np.sum(np.abs(psi)**2)) + 1e-12
+    return psi
+
+
+def _cwt_grid_morlet(x: np.ndarray, fs: float, grid: np.ndarray, w: float = 6.0, dur_sec: float = 2.0) -> np.ndarray:
+    mags = np.zeros((len(grid), len(x)), dtype=float)
+    for i, f0 in enumerate(grid):
+        psi = _morlet_kernel(fs, f0, w=w, dur_sec=dur_sec)
+        conv = signal.fftconvolve(x, np.conj(psi[::-1]), mode='same')
+        mags[i] = np.abs(conv)
+    return mags
+
+
+def _find_intervals(mask: np.ndarray) -> List[Tuple[int, int]]:
+    if mask.size == 0:
+        return []
+    diff = np.diff(mask.astype(int))
+    starts = np.where(diff == 1)[0] + 1
+    ends = np.where(diff == -1)[0]
+    if mask[0]:
+        starts = np.r_[0, starts]
+    if mask[-1]:
+        ends = np.r_[ends, mask.size - 1]
+    return list(zip(starts, ends))
+
+
+def group_coincident(events: List[List[Dict[str, float]]], tol_sec: float = 0.10) -> List[Dict[str, object]]:
+    flat = []
+    for evs in events:
+        flat.extend(evs)
+    if not flat:
+        return []
+    flat.sort(key=lambda d: d['start_time'])
+    merged = []
+    cur = { 'start_time': flat[0]['start_time'], 'end_time': flat[0]['end_time'],
+            'harmonics': [flat[0]['harmonic']], 'peaks': {flat[0]['harmonic']: flat[0]['peak_z']} }
+    for e in flat[1:]:
+        if e['start_time'] <= cur['end_time'] + tol_sec:
+            cur['end_time'] = max(cur['end_time'], e['end_time'])
+            if e['harmonic'] not in cur['harmonics']:
+                cur['harmonics'].append(e['harmonic'])
+            cur['peaks'][e['harmonic']] = e['peak_z']
+        else:
+            cur['harmonics'].sort(); merged.append(cur)
+            cur = { 'start_time': e['start_time'], 'end_time': e['end_time'],
+                    'harmonics': [e['harmonic']], 'peaks': {e['harmonic']: e['peak_z']} }
+    cur['harmonics'].sort(); merged.append(cur)
+    return merged
+
+
+def schumann_activity_index(z: np.ndarray) -> np.ndarray:
+    zp = np.clip(z, 0.0, None)
+    return np.nansum(zp, axis=0)
+
+# ---------- fused drift + heatmap ----------
+
+def detect_and_plot_schumann_microgrid_with_heatmaps(
+    RECORDS: pd.DataFrame,
+    signal_col: str,
+    time_col: str = 'Timestamp',
+    f0: float = 7.83,
+    n_harmonics: int = 5,
+    delta_hz: float = 0.45,
+    step_hz: float = 0.05,
+    w: float = 6.0,
+    kernel_dur_sec: float = 2.0,
+    baseline_win_sec: float = 120.0,
+    smooth_sec: float = 0.20,
+    z_thresh: float = 3.5,
+    min_dur_sec: float = 0.25,
+    ridge_medfilt_sec: float = 0.5,
+    show: bool = True,
+) -> Dict[str, object]:
+    fs = _get_fs(RECORDS, time_col)
+    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    x = np.asarray(pd.to_numeric(RECORDS[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
+    x = signal.detrend(x, type='linear')
+
+    harms = np.arange(1, n_harmonics+1)
+    events: List[List[Dict[str, float]]] = []
+    ridge_hz = []; ridge_amp = []; z_ridge = []
+    per_harmonic = []
+
+    min_len = max(1, int(round(fs * min_dur_sec)))
+    base_win = max(3, int(round(fs * baseline_win_sec)))
+    rid_med_n = max(1, int(round(fs * ridge_medfilt_sec))) | 1
+
+    for k in harms:
+        nominal = f0 * k
+        grid = np.arange(nominal - delta_hz, nominal + delta_hz + 1e-9, step_hz)
+        mags = _cwt_grid_morlet(x, fs, grid, w=w, dur_sec=kernel_dur_sec)  # [n_f, n_t]
+        idx = np.argmax(mags, axis=0)
+        idx_s = signal.medfilt(idx, kernel_size=rid_med_n)
+        fh = grid[idx_s]
+        ah = mags[idx_s, np.arange(mags.shape[1])]
+        ah_s = _smooth(ah, fs, smooth_sec)
+        med, mad = _rolling_median_mad(ah_s, base_win)
+        zh = (ah_s - med) / (1.4826 * mad)
+        # spike events along ridge
+        mask = zh >= z_thresh
+        ints = _find_intervals(mask)
+        evs = []
+        for s, e in ints:
+            if e - s + 1 < min_len:
+                continue
+            seg = zh[s:e+1]; pk = int(s + np.argmax(seg))
+            evs.append({
+                'harmonic': int(k),
+                'start_idx': int(s), 'end_idx': int(e), 'peak_idx': int(pk),
+                'start_time': float(t[s]), 'end_time': float(t[e]), 'peak_time': float(t[pk]),
+                'peak_z': float(zh[pk]), 'peak_freq_hz': float(fh[pk])
+            })
+        events.append(evs)
+        ridge_hz.append(fh); ridge_amp.append(ah_s); z_ridge.append(zh)
+        per_harmonic.append({'grid': grid, 'mags': mags, 'ridge_hz': fh})
+
+        # ---- plot heatmap with ridge overlay ----
+        if show:
+            plt.figure(figsize=(10, 3.6))
+            im = plt.imshow(mags, aspect='auto', origin='lower',
+                            extent=[t[0], t[-1], grid[0], grid[-1]], cmap='viridis')
+            plt.plot(t, fh, color='w', lw=1.2)
+            cb = plt.colorbar(im, pad=0.01); cb.set_label('|CWT|')
+            plt.xlabel('Time (s)'); plt.ylabel('Frequency (Hz)')
+            plt.title(f'Harmonic {k}: micro-grid TF heatmap + ridge')
+            plt.tight_layout()
+
+    ridge_hz = np.vstack(ridge_hz)
+    ridge_amp = np.vstack(ridge_amp)
+    z_ridge = np.vstack(z_ridge)
+
+    coinc = group_coincident(events, tol_sec=0.10)
+    sai = schumann_activity_index(z_ridge)
+
+    # summary plots
+    if show:
+        # drift panels
+        for i, k in enumerate(harms):
+            plt.figure(figsize=(10, 2.6))
+            plt.plot(t, ridge_hz[i] - (f0*k), lw=1.2)
+            plt.axhline(0.0, color='k', lw=0.8)
+            plt.ylabel('Drift (Hz)'); plt.xlabel('Time (s)')
+            plt.title(f'Harmonic {k} drift')
+            plt.tight_layout()
+        # piano roll + SAI
+        plt.figure(figsize=(10, 2.8))
+        for hi, evs in enumerate(events, start=1):
+            for e in evs:
+                plt.plot([e['start_time'], e['end_time']], [hi, hi], lw=6, solid_capstyle='butt')
+        yticks = np.arange(1, len(events) + 1)
+        ylabels = [f'{k}×{f0:.2f} Hz' for k in yticks]
+        plt.yticks(yticks, ylabels)
+        plt.xlabel('Time (s)'); plt.ylabel('Harmonic')
+        plt.title('Detected spikes along drift-tracked ridges'); plt.tight_layout()
+
+        plt.figure(figsize=(10, 2.4))
+        plt.plot(t, sai, lw=1.2)
+        plt.ylabel('Activity index (Σ z⁺)'); plt.xlabel('Time (s)')
+        plt.title('Schumann Activity Index (ridge-based)'); plt.tight_layout()
+
+    return {
+        'index': t,
+        'per_harmonic': per_harmonic,
+        'ridge_hz': ridge_hz,
+        'ridge_amp': ridge_amp,
+        'z_ridge': z_ridge,
+        'events': events,
+        'coincidence': coinc,
+        'sai': sai,
+        'params': {
+            'fs': fs, 'f0': f0, 'n_harmonics': n_harmonics,
+            'delta_hz': delta_hz, 'step_hz': step_hz,
+            'w': w, 'kernel_dur_sec': kernel_dur_sec,
+            'baseline_win_sec': baseline_win_sec, 'smooth_sec': smooth_sec,
+            'z_thresh': z_thresh, 'min_dur_sec': min_dur_sec,
+            'ridge_medfilt_sec': ridge_medfilt_sec,
+            'signal_col': signal_col,
+        }
+    }
