@@ -45,7 +45,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 from scipy import signal
-from scipy.stats import binom_test
+from scipy.stats import binomtest
 
 # ---------- I/O / time helpers ----------
 def _ensure_dir(d): os.makedirs(d, exist_ok=True); return d
