@@ -69,7 +69,16 @@ def _rolling_median_mad(x: np.ndarray, win: int) -> Tuple[np.ndarray, np.ndarray
         mad[i] = np.median(np.abs(xp[s] - m)) + 1e-12
     return med, mad
 
-
+def find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Series]:
+    # ---------------- Basics: fs + channel access ----------------
+    _DEF_TIME_COL = 'Timestamp'
+    _DEF_CH_PATTERNS = ("EEG.{ch}", "eeg.{ch}", "{ch}", "RAW.{ch}", "CHAN.{ch}")
+    for pat in _DEF_CH_PATTERNS:
+        col = pat.format(ch=ch_name)
+        if col in records.columns:
+            return pd.to_numeric(records[col], errors='coerce').astype(float)
+    return None
+    
 # ------------- Morlet wavelet core -------------
 
 def _morlet_kernel(fs: float, f0: float, w: float = 6.0, dur_sec: float = 2.0) -> np.ndarray:
@@ -1219,4 +1228,3 @@ def run_overlap_coherence_etas(
         'eta_pac': eta_pac,
         'n_onsets': int(len(np.where(np.diff((ov_p>=K).astype(int))==1)[0]))
     }
-
