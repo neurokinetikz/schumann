@@ -387,3 +387,352 @@ def run_crossfreq_suite_records(RECORDS: pd.DataFrame,
 #                                   sensor_phase_ch='F4', sensor_amp_chs=('O1','O2','P7','P8','T7','T8'),
 #                                   phase_bands=[(4,8),(8,13)], amp_bands=[(13,30),(30,80)], method='mi', n_sur=0)
 # print(res['verdict_notes'])
+
+# -------------------- basic helpers --------------------
+
+def infer_fs(RECORDS: pd.DataFrame, time_col: str = 'Timestamp') -> float:
+    t = np.asarray(pd.to_numeric(RECORDS[time_col], errors='coerce').values, float)
+    dt = np.diff(t); dt = dt[(dt > 0) & np.isfinite(dt)]
+    if dt.size == 0:
+        raise ValueError("Cannot infer sampling rate from time column.")
+    return float(1.0 / np.median(dt))
+
+def get_series(RECORDS: pd.DataFrame, name: str) -> np.ndarray:
+    """Return a numeric signal array. Accepts 'EEG.O1' or bare 'O1' (will try 'EEG.O1')."""
+    if name in RECORDS.columns:
+        x = pd.to_numeric(RECORDS[name], errors='coerce').fillna(0.0).values
+        return np.asarray(x, float)
+    alt = 'EEG.' + name
+    if alt in RECORDS.columns:
+        x = pd.to_numeric(RECORDS[alt], errors='coerce').fillna(0.0).values
+        return np.asarray(x, float)
+    raise ValueError(f"Signal '{name}' not found in RECORDS.")
+
+def bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order: int = 4) -> np.ndarray:
+    ny = 0.5 * fs
+    f1 = max(1e-6, min(f1, ny * 0.99))
+    f2 = max(f1 + 1e-6, min(f2, ny * 0.999))
+    b, a = signal.butter(order, [f1 / ny, f2 / ny], btype='band')
+    return signal.filtfilt(b, a, x)
+
+def slice_epoch(x: np.ndarray, idx0: int, idx1: int) -> Optional[np.ndarray]:
+    idx0 = max(0, idx0); idx1 = min(len(x), idx1)
+    if idx1 <= idx0:
+        return None
+    return x[idx0:idx1]
+
+# -------------------- 3a) Schumann-locked, event-related PAC --------------------
+
+def detect_schumann_bursts(RECORDS: pd.DataFrame,
+                           sr_channel: str,
+                           time_col: str = 'Timestamp',
+                           center_hz: float = 7.83,
+                           half_bw_hz: float = 0.6,
+                           smooth_sec: float = 0.25,
+                           thresh_mode: str = 'z',
+                           z_thresh: float = 2.5,
+                           perc_thresh: float = 95.0,
+                           min_isi_sec: float = 2.0
+                           ) -> Dict[str, object]:
+    """
+    Detect Schumann bursts on a reference signal by thresholding the narrowband envelope.
+    Returns {'onsets_sec': [...], 'env': env, 't': t}.
+    """
+    fs = infer_fs(RECORDS, time_col)
+    t = np.asarray(pd.to_numeric(RECORDS[time_col], errors='coerce').values, float)
+    y = get_series(RECORDS, sr_channel)
+    yb = bandpass(y, fs, center_hz - half_bw_hz, center_hz + half_bw_hz)
+    env = np.abs(signal.hilbert(yb))
+    # smooth envelope
+    n = max(1, int(round(fs * smooth_sec)))
+    if n > 1:
+        w = np.hanning(n) / np.sum(np.hanning(n))
+        env = np.convolve(env, w, mode='same')
+    # threshold
+    if thresh_mode == 'z':
+        z = (env - env.mean()) / (env.std() + 1e-12)
+        mask = z >= z_thresh
+    else:
+        thr = np.percentile(env, perc_thresh)
+        mask = env >= thr
+    # rising edges
+    on_idx = np.where(np.diff(mask.astype(int)) == 1)[0] + 1
+    # enforce minimum ISI
+    on = []
+    last_t = -np.inf
+    for i in on_idx:
+        if t[i] - last_t >= min_isi_sec:
+            on.append(t[i]); last_t = t[i]
+    return {'onsets_sec': on, 'env': env, 't': t}
+
+def pac_mi_phase_amp(x_phase: np.ndarray,
+                     x_amp: np.ndarray,
+                     nbins: int = 18) -> float:
+    """Tort MI: KL divergence of phase-binned amplitude from uniform."""
+    ph = np.angle(signal.hilbert(x_phase))
+    am = np.abs(signal.hilbert(x_amp))
+    edges = np.linspace(-np.pi, np.pi, nbins + 1)
+    digit = np.digitize(ph, edges) - 1
+    digit = np.clip(digit, 0, nbins - 1)
+    m = np.zeros(nbins)
+    for k in range(nbins):
+        sel = (digit == k)
+        m[k] = np.mean(am[sel]) if np.any(sel) else 0.0
+    if m.sum() <= 0:
+        return 0.0
+    p = m / m.sum()
+    eps = 1e-12
+    mi = np.sum(p * np.log((p + eps) / (1.0 / nbins))) / np.log(nbins)
+    return float(mi)
+
+def epochwise_pac_timecourse(RECORDS: pd.DataFrame,
+                             eeg_channels: List[str],
+                             time_col: str,
+                             onsets_sec: List[float],
+                             win_sec: Tuple[float, float] = (-10.0, 10.0),
+                             pac_phase_band: Tuple[float, float] = (4, 8),
+                             pac_amp_band: Tuple[float, float] = (30, 80),
+                             step_sec: float = 0.25,
+                             win_pac_sec: float = 1.0,
+                             nbins: int = 18) -> Dict[str, object]:
+    """
+    Build trial x time PAC(t) around onsets, averaged over channels.
+    Sliding window (win_pac_sec) with step (step_sec).
+    """
+    fs = infer_fs(RECORDS, time_col)
+    n_step = max(1, int(round(step_sec * fs)))
+    L = int(round((win_sec[1] - win_sec[0]) * fs))
+    # assemble channel matrix
+    X = []
+    for ch in eeg_channels:
+        X.append(get_series(RECORDS, ch))
+    X = np.vstack(X)  # (n_ch, N)
+    N = X.shape[1]
+    # time vector relative to onset for centers of windows
+    centers = np.arange(int(round(win_sec[0] * fs + win_pac_sec * fs / 2)),
+                        int(round(win_sec[1] * fs - win_pac_sec * fs / 2)) + 1,
+                        n_step)
+    t_rel = centers / fs
+    # compute PAC per trial
+    PAC = []  # trials x time
+    keep_onsets = []
+    for on in onsets_sec:
+        i_on = int(round(on * fs))
+        i0 = i_on + int(round(win_sec[0] * fs))
+        i1 = i_on + int(round(win_sec[1] * fs))
+        if i0 < 0 or i1 > N or (i1 - i0) < int(round(win_pac_sec * fs)):
+            continue
+        trial = []
+        for c in centers:
+            s = i_on + int(round(c - win_pac_sec * fs / 2))
+            e = s + int(round(win_pac_sec * fs))
+            if s < 0 or e > N:
+                trial.append(np.nan)
+                continue
+            # band-limit per channel and average MI across channels
+            mis = []
+            for x in X:
+                xp = bandpass(x[s:e], fs, pac_phase_band[0], pac_phase_band[1])
+                xa = bandpass(x[s:e], fs, pac_amp_band[0], pac_amp_band[1])
+                mis.append(pac_mi_phase_amp(xp, xa, nbins=nbins))
+            trial.append(np.nanmean(mis))
+        PAC.append(trial)
+        keep_onsets.append(on)
+    PAC = np.array(PAC, float)  # (n_trials, n_time)
+    return {'t_rel': t_rel, 'PAC_trials': PAC, 'onsets_used': keep_onsets}
+
+def cluster_permutation_1d(mean_tc: np.ndarray,
+                           trials_tc: np.ndarray,
+                           alpha: float = 0.05,
+                           n_perm: int = 200,
+                           rng_seed: int = 7) -> Dict[str, object]:
+    """
+    Simple 1D cluster-based permutation along time for ERPAC curve.
+    - Observed: mean_tc (T,) from trials_tc (N,T) relative to baseline 0
+    - Null: sign-flip trials randomly to build max-cluster distribution
+    Returns significant mask and cluster boundaries.
+    """
+    rng = np.random.default_rng(rng_seed)
+    T = mean_tc.size
+    # Threshold = percentile of permuted means at each time (one-sided)
+    null_means = []
+    for _ in range(n_perm):
+        signs = rng.choice([-1, 1], size=trials_tc.shape[0])
+        perm = np.nanmean(signs[:, None] * trials_tc, axis=0)
+        null_means.append(perm)
+    null_means = np.array(null_means)
+    thr = np.nanpercentile(null_means, 100 * (1 - alpha), axis=0)  # timepoint-wise threshold
+
+    # observed clusters
+    sig = mean_tc > thr
+    # cluster mass = sum over contiguous sig points
+    clusters = []
+    start = None
+    for i in range(T):
+        if sig[i] and start is None:
+            start = i
+        elif (not sig[i]) and start is not None:
+            clusters.append((start, i - 1))
+            start = None
+    if start is not None:
+        clusters.append((start, T - 1))
+
+    # Null cluster masses
+    null_max = []
+    for p in null_means:
+        s = p > thr  # reuse same threshold
+        maxmass = 0.0; run = 0.0
+        for i in range(T):
+            if s[i]:
+                run += p[i]
+                maxmass = max(maxmass, run)
+            else:
+                run = 0.0
+        null_max.append(maxmass)
+    thresh_mass = np.nanpercentile(null_max, 95)
+
+    # Which observed clusters exceed mass threshold?
+    sig_clusters = []
+    for (a, b) in clusters:
+        mass = np.nansum(mean_tc[a:b+1])
+        if mass >= thresh_mass:
+            sig_clusters.append((a, b))
+    mask = np.zeros(T, dtype=bool)
+    for (a, b) in sig_clusters:
+        mask[a:b+1] = True
+    return {'sig_mask': mask, 'sig_clusters': sig_clusters, 'thr_point': thr, 'thr_mass': thresh_mass}
+
+def run_schumann_locked_erpac(RECORDS: pd.DataFrame,
+                              sr_channel: str,
+                              eeg_channels: List[str],
+                              time_col: str = 'Timestamp',
+                              detect_params: Dict = None,
+                              erpac_params: Dict = None,
+                              baseline_window: Tuple[float, float] = (-10.0, -2.0),
+                              do_permutation: bool = True) -> Dict[str, object]:
+    """
+    Full ERPAC:
+      1) detect Schumann bursts on sr_channel
+      2) build trial x time PAC around onsets
+      3) baseline-correct per trial by subtracting mean PAC in baseline_window
+      4) cluster-based permutation along time (optional)
+    """
+    detect_params = detect_params or {}
+    erpac_params = erpac_params or {}
+    fs = infer_fs(RECORDS, time_col)
+    # 1) detect bursts
+    det = detect_schumann_bursts(RECORDS, sr_channel, time_col=time_col, **detect_params)
+    onsets = det['onsets_sec']
+    if len(onsets) == 0:
+        raise ValueError("No Schumann bursts detected with current threshold.")
+
+    # 2) epochwise PAC
+    ep = epochwise_pac_timecourse(RECORDS, eeg_channels, time_col, onsets, **erpac_params)
+    PAC = ep['PAC_trials']  # (n_trials, T)
+    t_rel = ep['t_rel']
+
+    # 3) baseline-correct per trial
+    bsel = (t_rel >= baseline_window[0]) & (t_rel <= baseline_window[1])
+    PAC_bc = PAC - np.nanmean(PAC[:, bsel], axis=1, keepdims=True)
+    mean_tc = np.nanmean(PAC_bc, axis=0)
+
+    out = {'t_rel': t_rel, 'PAC_trials': PAC, 'PAC_bc': PAC_bc, 'mean_tc': mean_tc, 'onsets': ep['onsets_used']}
+    if do_permutation:
+        perm = cluster_permutation_1d(mean_tc, PAC_bc)
+        out.update({'perm': perm})
+    return out
+
+# -------------------- 3b) Cross-bicoherence / cross-bispectrum --------------------
+
+def segment_fft(sig: np.ndarray, fs: float, nperseg: int, noverlap: int) -> np.ndarray:
+    """Return STFT-like complex spectra array (n_seg, n_freq) using Hann windows."""
+    step = nperseg - noverlap
+    win = signal.hann(nperseg, sym=False)
+    n_fft = int(2 ** np.ceil(np.log2(nperseg)))
+    segs = []
+    for start in range(0, len(sig) - nperseg + 1, step):
+        seg = sig[start:start+nperseg] * win
+        S = np.fft.rfft(seg, n=n_fft)   # (n_freq,)
+        segs.append(S)
+    return np.array(segs), np.fft.rfftfreq(n_fft, d=1/fs)
+
+def cross_bicoherence(RECORDS: pd.DataFrame,
+                      x_sr: str,              # Schumann reference channel (for f1 ≈ 7.8 Hz)
+                      y_eeg: str,             # EEG channel for gamma (f2)
+                      z_eeg: Optional[str] = None,  # EEG channel for f1+f2 (default = y_eeg)
+                      time_col: str = 'Timestamp',
+                      f1_list: List[float] = (7.83,),    # cyclic base(s)
+                      f2_min: float = 30.0, f2_max: float = 80.0, n_f2: int = 40,
+                      nperseg: int = 2048, noverlap: int = 1024,
+                      do_surrogate: bool = True, n_surr: int = 200, rng_seed: int = 11
+                      ) -> Dict[str, object]:
+    """
+    Compute cross-bicoherence b_xy(f1,f2) predicting Z at f1+f2:
+      b_xy(f1,f2) = E[X(f1)Y(f2)Z*(f1+f2)] / sqrt( E|X(f1)Y(f2)|^2 * E|Z(f1+f2)|^2 )
+    Returns matrix over (f1_list,f2_grid) and a simple circular-shift surrogate null for y/z.
+    """
+    fs = infer_fs(RECORDS, time_col)
+    x = get_series(RECORDS, x_sr)
+    y = get_series(RECORDS, y_eeg)
+    if z_eeg is None:
+        z = y
+    else:
+        z = get_series(RECORDS, z_eeg)
+
+    X, f = segment_fft(x, fs, nperseg, noverlap)   # (n_seg, n_freq)
+    Y, _ = segment_fft(y, fs, nperseg, noverlap)
+    Z, _ = segment_fft(z, fs, nperseg, noverlap)
+    if X.size == 0 or Y.size == 0 or Z.size == 0:
+        raise ValueError("Not enough data for the chosen nperseg/noverlap.")
+
+    # f2 grid and indexing helpers
+    f2_grid = np.linspace(f2_min, f2_max, n_f2)
+    def idx_of(freq):
+        return int(np.argmin(np.abs(f - freq)))
+
+    B = np.zeros((len(f1_list), n_f2), float)
+    for i, f1 in enumerate(f1_list):
+        i1 = idx_of(f1)
+        for j, f2 in enumerate(f2_grid):
+            i2 = idx_of(f2)
+            i12 = idx_of(f1 + f2)
+            num = np.mean(X[:, i1] * Y[:, i2] * np.conj(Z[:, i12]))
+            den = np.sqrt(np.mean(np.abs(X[:, i1] * Y[:, i2])**2) * np.mean(np.abs(Z[:, i12])**2) + 1e-24)
+            B[i, j] = np.abs(num) / (den + 1e-24)
+
+    out = {'f1_list': np.array(f1_list), 'f2_grid': f2_grid, 'bicoherence': B, 'freqs': f}
+    # Simple surrogate: circularly shift Y (gamma) segments per realization
+    if do_surrogate:
+        rng = np.random.default_rng(rng_seed)
+        null_max = []
+        for _ in range(n_surr):
+            # circular shift each epoch spectrum by a random small amount in time domain
+            # (approximate by reordering epochs; simpler robust null)
+            Y_perm = Y.copy()
+#             rng.shuffle(Y_perm, axis=0)
+            Y_perm = Y_perm[rng.permutation(Y_perm.shape[0]), :]
+            B0 = np.zeros_like(B)
+            for i, f1 in enumerate(f1_list):
+                i1 = idx_of(f1)
+                for j, f2 in enumerate(f2_grid):
+                    i2 = idx_of(f2); i12 = idx_of(f1 + f2)
+                    num = np.mean(X[:, i1] * Y_perm[:, i2] * np.conj(Z[:, i12]))
+                    den = np.sqrt(np.mean(np.abs(X[:, i1] * Y_perm[:, i2])**2) * np.mean(np.abs(Z[:, i12])**2) + 1e-24)
+                    B0[i, j] = np.abs(num) / (den + 1e-24)
+            null_max.append(np.nanmax(B0))
+        out['null_thresh95'] = float(np.nanpercentile(null_max, 95))
+    return out
+
+def plot_bicoherence(out: Dict[str, object], i_f1: int = 0, title: Optional[str] = None) -> None:
+    """Heatmap of cross-bicoherence at a fixed f1 index across f2_grid."""
+    f2 = out['f2_grid']; B = out['bicoherence']; f1_list = out['f1_list']
+    plt.figure(figsize=(7, 3))
+    plt.plot(f2, B[i_f1], lw=1.8)
+    if 'null_thresh95' in out:
+        plt.axhline(out['null_thresh95'], color='k', ls='--', lw=1, label='null 95%')
+    plt.xlabel('f2 (Hz, EEG γ)'); plt.ylabel('cross-bicoherence |b_xy|')
+    plt.title(title or f'Cross-bicoherence at f1={f1_list[i_f1]:.2f} Hz')
+    plt.grid(alpha=0.2)
+    if 'null_thresh95' in out:
+        plt.legend()
+    plt.tight_layout(); plt.show()
