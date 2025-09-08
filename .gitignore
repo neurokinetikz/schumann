@@ -5,3 +5,6 @@ data/*
 embedding_frames*
 session_exports/*
 .DS_Store
+*.png
+*.csv
+*.npy
