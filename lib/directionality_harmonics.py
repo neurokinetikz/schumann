@@ -92,7 +92,7 @@ def granger_2d_refit(x, y, p=6):
 
 # --- FFT segs for bispectrum ---
 def _fft_segments(x, fs, nperseg, step):
-    w = signal.hann(nperseg, sym=False)
+    w = signal.windows.hann(nperseg, sym=False)
     hop = nperseg - step
     nseg = 1 + max(0, (len(x)-nperseg)//hop)
     Xs=[]

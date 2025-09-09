@@ -237,7 +237,7 @@ def run_harmonic_resonance_spectral_modes(
     # simple binomial test for “>=1 hit” across channels at the fundamental (p0~0.05)
     p0 = 0.05
     k = hits.get(zcols[0], 0); n = n_ch
-    p_binom = float(binom_test(k, n, p0, alternative='greater'))
+    p_binom = float(binomtest(k, n, p0, alternative='greater').pvalue)
 
     # ---- (3) Spatial mode @ ~7.83 Hz ----
     mode = spatial_mode_8hz(X, fs, f0=harmonics[0], half=half_bw)

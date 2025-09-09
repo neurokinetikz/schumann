@@ -249,6 +249,73 @@ def band_average(M: np.ndarray, f: np.ndarray, band: Tuple[float,float]) -> np.n
     if not np.any(sel): sel = [np.argmin(np.abs(f - np.mean(band)))]
     return np.nanmean(M[:, :, sel], axis=2)
 
+
+def fit_var(X: np.ndarray, order_max: int = 20, criterion: str = 'bic'):
+    """
+    Fit VAR to (n_nodes, T) → statsmodels VAR on (T, n_nodes).
+    Returns res (fitted), order p, AR coefs array A (p, n, n).
+    """
+    if not _HAS_SM: return None, None, None
+    Y = X.T
+    model = VAR(Y)
+    sel = model.select_order(maxlags=order_max)
+    # support both attribute/dict forms
+    p = getattr(sel, criterion) if hasattr(sel, criterion) else sel[criterion]
+    p = int(p if p is not None else min(10, order_max))
+    res = model.fit(p)
+    A = np.array(res.coefs)  # (p, n, n)  y_t = sum_k A_k y_{t-k} + u_t
+    return res, p, A
+
+def A_of_f(A: np.ndarray, f: np.ndarray, fs: float) -> np.ndarray:
+    """A(f) = I − Σ_k A_k e^{−i2πfk/fs};  returns (n_f, n, n)."""
+    p, n, _ = A.shape
+    I = np.eye(n)
+    Af = []
+    for ff in f:
+        Z = I.copy()
+        for k in range(1, p+1):
+            Z = Z - A[k-1] * np.exp(-1j*2*np.pi*ff * k / fs)
+        Af.append(Z)
+    return np.array(Af)
+
+def H_of_f(Af: np.ndarray) -> np.ndarray:
+    """Transfer matrix H(f) = A(f)^{-1}, per frequency."""
+    Hf = np.zeros_like(Af, dtype=complex)
+    for i in range(Af.shape[0]):
+        Hf[i] = np.linalg.inv(Af[i])
+    return Hf
+
+def spectral_dtf_pdc(A: np.ndarray, fs: float,
+                     fmin: float, fmax: float, n_freq: int = 128) -> Dict[str, np.ndarray]:
+    """
+    DTF_{i<-j}(f) = |H_ij| / sqrt(Σ_k |H_ik|^2)   (row-normalized)
+    PDC_{i<-j}(f) = |A_ij| / sqrt(Σ_k |A_kj|^2)   (column-normalized A(f))
+    Returns dict with 'f','DTF','PDC' arrays of shape (n, n, n_freq).
+    """
+    n = A.shape[1]
+    f = np.linspace(fmin, fmax, n_freq)
+    Af = A_of_f(A, f, fs)         # (n_f, n, n)
+    Hf = H_of_f(Af)               # (n_f, n, n)
+    DTF = np.zeros((n, n, n_freq))
+    PDC = np.zeros((n, n, n_freq))
+    for k in range(n_freq):
+        H = Hf[k]
+        num = np.abs(H)**2
+        den = np.sum(num, axis=1, keepdims=True) + 1e-24
+        DTF[:, :, k] = np.sqrt(num/den)
+        A_k = Af[k]
+        numA = np.abs(A_k)**2
+        denA = np.sum(numA, axis=0, keepdims=True) + 1e-24
+        PDC[:, :, k] = np.sqrt(numA/denA)
+    return {'f': f, 'DTF': DTF, 'PDC': PDC}
+
+def band_average(M: np.ndarray, f: np.ndarray, band: Tuple[float,float]) -> np.ndarray:
+    """Mean over frequency indices in band; M shape (n,n,n_f)."""
+    sel = (f>=band[0]) & (f<=band[1])
+    if not np.any(sel): sel = [np.argmin(np.abs(f - np.mean(band)))]
+    return np.nanmean(M[:, :, sel], axis=2)
+
+
 # ---------------------------- Nulls for SR causality ----------------------------
 
 def circular_shift_sr_null(RECORDS: pd.DataFrame, sr_channel: str, fs: float,

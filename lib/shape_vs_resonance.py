@@ -162,7 +162,7 @@ def irasa_psd(x, fs, hset=(1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9), nperseg=None, f
 # ----------------------------- (C) Discrete (cross‑)bicoherence -----------------------------
 
 def _fft_segments(x, fs, nperseg, step):
-    w = signal.hann(nperseg, sym=False)
+    w = signal.windows.hann(nperseg, sym=False)
     hop = nperseg - step
     nseg = 1 + max(0, (len(x)-nperseg)//hop)
     Xs=[]

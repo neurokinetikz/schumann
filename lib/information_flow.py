@@ -28,6 +28,10 @@ import matplotlib.pyplot as plt
 from scipy.special import gamma as Gamma, digamma
 from sklearn.neighbors import NearestNeighbors
 
+import statsmodels.api as sm
+from statsmodels.tsa.api import VAR
+
+
 # optional: VAR & Ljung-Box from statsmodels
 try:
     from statsmodels.tsa.api import VAR

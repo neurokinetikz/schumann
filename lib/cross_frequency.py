@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Dict, Optional
 from scipy import signal
+from scipy.signal.windows import hann
 
 # Reuse-safe filters with guardrails
 def _butter_bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order: int = 4) -> np.ndarray:
@@ -647,7 +648,7 @@ def run_schumann_locked_erpac(RECORDS: pd.DataFrame,
 def segment_fft(sig: np.ndarray, fs: float, nperseg: int, noverlap: int) -> np.ndarray:
     """Return STFT-like complex spectra array (n_seg, n_freq) using Hann windows."""
     step = nperseg - noverlap
-    win = signal.hann(nperseg, sym=False)
+    win = signal.windows.hann(nperseg, sym=False)
     n_fft = int(2 ** np.ceil(np.log2(nperseg)))
     segs = []
     for start in range(0, len(sig) - nperseg + 1, step):

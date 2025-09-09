@@ -19,7 +19,7 @@ Limits: All analyses clamp to ≤ 60 Hz (or ≤ Nyquist).
 Dependencies: numpy, scipy, matplotlib. Optional: ssqueezepy (preferred).
 Install (optional): pip install ssqueezepy
 """
-
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal

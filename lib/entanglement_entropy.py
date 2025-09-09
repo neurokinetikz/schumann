@@ -53,6 +53,9 @@ from typing import Dict, List, Tuple, Optional
 from scipy import signal
 from numpy.linalg import det, inv
 
+import math
+np.math = math
+
 # ---------------------- small utilities ----------------------
 
 def _ensure_dir(d): os.makedirs(d, exist_ok=True); return d
