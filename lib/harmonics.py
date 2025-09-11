@@ -24,7 +24,9 @@ import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional
 from scipy import signal
 import networkx as nx
-
+from scipy.signal import butter, filtfilt, hilbert, welch, csd
+from scipy.stats import circvar
+from scipy.interpolate import griddata
 
 # ------------- utilities -------------
 
@@ -79,6 +81,40 @@ def find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Seri
             return pd.to_numeric(records[col], errors='coerce').astype(float)
     return None
     
+def _get_channel_vector(RECORDS, ch: str) -> np.ndarray:
+    """Return 1D array for a channel; accepts 'F4' or 'EEG.F4' etc."""
+    candidates = {ch, f'EEG.{ch}', ch.upper(), f'EEG.{ch.upper()}'}
+    if isinstance(RECORDS, dict):
+        data = RECORDS.get('data', RECORDS.get('eeg', RECORDS.get('EEG')))
+        # pandas DataFrame?
+        if hasattr(data, 'columns'):
+            cols = list(map(str, data.columns))
+            for nm in candidates:
+                if nm in cols:
+                    return np.asarray(data[nm]).astype(float)
+        # numpy + channel list?
+        ch_names = RECORDS.get('channel_names') or RECORDS.get('channels')
+        if ch_names is not None and data is not None:
+            ch_names = list(map(str, ch_names))
+            for nm in candidates:
+                if nm in ch_names:
+                    i = ch_names.index(nm)
+                    return np.asarray(data[:, i]).astype(float)
+    # attributes fallback
+    if hasattr(RECORDS, ch):
+        return np.asarray(getattr(RECORDS, ch)).astype(float)
+    if hasattr(RECORDS, 'data') and hasattr(RECORDS, 'channel_names'):
+        ch_names = list(map(str, getattr(RECORDS, 'channel_names')))
+        for nm in candidates:
+            if nm in ch_names:
+                i = ch_names.index(nm)
+                return np.asarray(getattr(RECORDS, 'data')[:, i]).astype(float)
+    # last try: strip EEG. prefix
+    base = ch.replace('EEG.', '')
+    if hasattr(RECORDS, base):
+        return np.asarray(getattr(RECORDS, base)).astype(float)
+    raise KeyError(f"Channel {ch} not found. Tried {sorted(candidates)}")
+
 # ------------- Morlet wavelet core -------------
 
 def _morlet_kernel(fs: float, f0: float, w: float = 6.0, dur_sec: float = 2.0) -> np.ndarray:
@@ -1016,6 +1052,7 @@ def _bandpass(X: np.ndarray, fs: float, f1: float, f2: float, order: int=4) -> n
     b,a = signal.butter(order, [f1/ny, f2/ny], btype='band')
     return signal.filtfilt(b,a,X,axis=1)
 
+
 # ---------- metrics in a window ----------
 
 def _plv_mean_block(Xb: np.ndarray) -> float:
@@ -1228,3 +1265,32 @@ def run_overlap_coherence_etas(
         'eta_pac': eta_pac,
         'n_onsets': int(len(np.where(np.diff((ov_p>=K).astype(int))==1)[0]))
     }
+
+def _infer_fs(df: pd.DataFrame, time_col: str)->float:
+    t = np.asarray(pd.to_numeric(df[time_col], errors='coerce').values, float)
+    dt = np.diff(t); dt = dt[(dt>0)&np.isfinite(dt)]
+    if dt.size==0: raise ValueError("Cannot infer fs from time column.")
+    return float(1.0/np.median(dt))
+
+def estimate_sr_harmonics(RECORDS, sr_channel='EEG.F4', fs=None,
+                          f_can=(7.83, 14.3, 20.8, 27.3, 33.8),
+                          search_halfband=0.8, nperseg_sec=32.0, overlap=0.5, time_col="Timestamp"):
+    if fs is None:
+        fs = _infer_fs(RECORDS,time_col)
+    x = _get_channel_vector(RECORDS, sr_channel)
+    nper = int(round(nperseg_sec*fs)); nover = int(round(overlap*nper))
+    f, Pxx = welch(x, fs=fs, nperseg=nper, noverlap=nover, window='hann', detrend='constant', scaling='density')
+    def _peak_near(f0, half=0.8):
+        m = (f >= max(0.1, f0-half)) & (f <= (f0+half))
+        if not np.any(m): return f0
+        ff, pp = f[m], Pxx[m]
+        k = int(np.nanargmax(pp))
+        # small parabolic refine in log power
+        if 0 < k < len(pp)-1 and pp[k-1]>0 and pp[k]>0 and pp[k+1]>0:
+            y1,y2,y3 = np.log(pp[k-1]), np.log(pp[k]), np.log(pp[k+1])
+            denom = (y1 - 2*y2 + y3)
+            delta = 0.5*(y1 - y3)/denom if denom != 0 else 0.0
+            step = ff[1]-ff[0]
+            return float(np.clip(ff[k] + delta*step, ff[0], ff[-1]))
+        return float(ff[k])
+    return [_peak_near(f0, half=search_halfband) for f0 in f_can]

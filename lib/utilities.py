@@ -37,14 +37,61 @@ RANGES  = {'Delta':[1,4],'Theta':[4,8],'Alpha':[8,12],'BetaL':[12,16], 'BetaH':[
 # Helper to make full column names used in your CSV (e.g., "EEG.AF3")
 col = lambda e: f"EEG.{e}"
 
+# ==== FILTER DESIGN HELPERS ===============
+def butter_highpass(sig, cutoff_hz, fs=FS, order=2):
+    nyq = fs/2.0
+    b, a = signal.butter(order, cutoff_hz/nyq, btype='highpass')
+    return signal.filtfilt(b, a, sig)
 
+def butter_bandpass(sig, f_lo, f_hi, fs=FS, order=4):
+    nyq = fs/2.0
+    b, a = signal.butter(order, [f_lo/nyq, f_hi/nyq], btype='band')
+    return signal.filtfilt(b, a, sig)
 
-def load_eeg_csv(csv_path, electrodes):
+def bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order: int = 4) -> np.ndarray:
+    ny = 0.5 * fs
+    f1 = max(1e-6, min(f1, 0.99*ny))
+    f2 = max(f1 + 1e-6, min(f2, 0.999*ny))
+    b, a = signal.butter(order, [f1/ny, f2/ny], btype='band')
+    return signal.filtfilt(b, a, np.asarray(x, float))
+
+def zscore(x: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, float)
+    return (x - np.mean(x)) / (np.std(x) + 1e-12)
+
+def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv"):
     """Load CSV as in user's snippet and return a pre-processed DataFrame.
     Expects columns: 'Timestamp' (seconds or ms) and 'EEG.<electrode>' per channel.
     """
-    df = pd.read_csv(csv_path, low_memory=False, header=1).sort_values(by=['Timestamp']).reset_index(drop=True)
+    if device == 'emotiv':
+        df = pd.read_csv(csv_path, low_memory=False, header=1).sort_values(by=['Timestamp']).reset_index(drop=True)
+    else:
+        df = pd.read_csv(csv_path, low_memory=False, header=0).sort_values(by=['timestamps']).reset_index(drop=True)
+        df.rename(columns={'timestamps': 'Timestamp'}, inplace=True)
+        
+        # 2) map Muse channels → EEG.<name>
+        default_map = {
+            "eeg_1": "EEG.AF7",
+            "eeg_2": "EEG.AF8",
+            "eeg_3": "EEG.TP9",
+            "eeg_4": "EEG.TP10",
+        }
 
+        cols_lower = {c.lower(): c for c in df.columns}
+        
+        resolved = {}
+        for muse_col, eeg_name in default_map.items():
+            key = muse_col.lower()
+            if True:
+                resolved[eeg_name] = cols_lower[key]   # save the real column name
+                df.rename(columns={key: eeg_name}, inplace=True)
+            else:
+                # allow soft failure; you may not always have all 4 channels
+                # print or just skip
+                pass
+        
+        df = df.dropna(subset=['EEG.AF7', 'EEG.AF8','EEG.TP9', 'EEG.TP10'])
+    
     # Normalize time to start at 0
     df['Timestamp'] = df['Timestamp'] - df['Timestamp'].iloc[0]
     # If Timestamp looks like milliseconds, convert to seconds
@@ -82,6 +129,7 @@ def load_eeg_csv(csv_path, electrodes):
             df[f"{pc}.REL"] = df[pc] / pow_sum
 
     return df
+
 
 # ==== FILTER DESIGN HELPERS ===============
 def butter_highpass(sig, cutoff_hz, fs=FS, order=2):
@@ -461,6 +509,7 @@ def animate_theta_alpha_psd(
     dpi=90,
     show_legend=True,
     save_path=None,
+    f0=7.8
 ):
     """
     Create a timelapse animation of the combined theta+alpha PSD for a single electrode.
@@ -534,29 +583,29 @@ def animate_theta_alpha_psd(
     ax.set_xlim(fmin, fmax)
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("PSD (V$^2$/Hz)")
-    vline = ax.axvline(7.8, color='red', linestyle='--')
+    vline = ax.axvline(f0, color='red', linestyle='--')
     vline = ax.axvline(14.3, color='red', linestyle='--')
     vline = ax.axvline(20.8, color='red', linestyle='--')
     vline = ax.axvline(27.3, color='red', linestyle='--')
     vline = ax.axvline(30.8, color='red', linestyle='--')
 
     xt = list(ax.get_xticks())
-    if 7.8 < fmax and 7.8 > fmin:
-        xt += [7.8]
+    if f0 < fmax and f0 > fmin:
+        xt += [f0]
     ax.set_xticks(sorted(set(xt)))
     labels = []
     for tick in ax.get_xticks():
-        if abs(tick - 7.8) < 1e-6:
-            labels.append('7.8')
+        if abs(tick - f0) < 1e-6:
+            labels.append(f"{f0:.2f}")
         else:
             labels.append(str(round(float(tick), 1)))
     ax.set_xticklabels(labels, color='black')
     for lab in ax.get_xticklabels():
-        if lab.get_text() == '7.8':
+        if lab.get_text() == f"{f0:.2f}":
             lab.set_color('red')
             lab.set_fontweight('bold')
     if show_legend:
-        ax.legend([vline], ["7.8 Hz"], loc='upper right')
+        ax.legend([vline], [f"{f0:.2f}" + " Hz"], loc='upper right')
 
     title = ax.set_title("")
     plt.subplots_adjust(top=0.85)  # More space at top to prevent clipping
