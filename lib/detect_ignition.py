@@ -75,6 +75,22 @@ def bandpass_safe(x: np.ndarray, fs: float, f1: float, f2: float, order=4) -> np
     b,a = signal.butter(order, [f1/ny, f2/ny], btype='band')
     return signal.filtfilt(b,a,x,axis=-1)
 
+# --- MSC helper (time-resolved coherence at f0) ---
+
+def _msc_f0_series(x: np.ndarray, y: np.ndarray, fs: float, f0: float, win: float = 1.0, step: float = 0.1) -> np.ndarray:
+    """Return a short-window MSC time series at f0 for signals x,y.
+    x,y: 1-D arrays; win/step in seconds.
+    """
+    nwin = int(round(win*fs)); nstep = int(round(step*fs))
+    if nwin <= 1 or len(x) < nwin or len(y) < nwin:
+        return np.array([])
+    vals = []
+    for i in range(0, min(len(x),len(y)) - nwin + 1, nstep):
+        segx = x[i:i+nwin]; segy = y[i:i+nwin]
+        f, C = signal.coherence(segx, segy, fs=fs, nperseg=nwin)
+        vals.append(C[np.argmin(np.abs(f - f0))])
+    return np.array(vals, float) if vals else np.array([])
+
 # ---------- Virtual SR reference builders ----------
 
 def _ssd_weights(X: np.ndarray, fs: float, f0: float, bw: float = 0.4, flank: float = 1.0) -> np.ndarray:
@@ -302,10 +318,11 @@ def detect_ignitions_session(
     ign_json_path = os.path.join(out_dir, 'ignition_windows.json')
     with open(ign_json_path, 'w') as f:
         json.dump(ignition_windows_rounded, f)
-    if verbose:
-        print(f"Ignition windows (rounded, whole seconds): {ignition_windows_rounded}")
-        print(f"Saved → {ign_json_path}")
+    #if verbose:
+        # print(f"Ignition windows (rounded, whole seconds): {ignition_windows_rounded}")
+        # print(f"Saved → {ign_json_path}")
 
+    
     # --- 3) EEG matrix & session R(t)
     X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
     L = min(map(len, X))
@@ -346,6 +363,19 @@ def detect_ignitions_session(
     g_lo, g_hi = pel_band
     g_lo, g_hi = _safe_band(g_lo, g_hi, fs)
     gamma_band = (g_lo, g_hi)
+
+
+    if verbose:
+        print("\n=== Ignition Detection — Session Summary ===\n")
+        print(f"SR reference: {sr_channel}")
+        print("Estimated SR: ", np.round(valid_harmonics,2))
+        print(f"Ignition windows: {ignition_windows_rounded}")
+        print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
+        print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
+        print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
+        print(f"Event SR mode: {sr_reference}")
+
+    
 
     ch_short = [c.split('.',1)[-1] for c in eeg_channels]
 
@@ -461,6 +491,22 @@ def detect_ignitions_session(
         idxV = int(np.argmin(np.abs(fEv - center_hz)))
         msc_v = float(CEv[idxV])
 
+        # --- MSC peak vs average: compute around t0_net (±2.5 s) ---
+        x_mean = Xw.mean(axis=0)
+        y_ref  = v_sr
+        def _slice_idx(t0, left, right):
+            i0s = max(0, int(round((t0 + left - a)*fs)))
+            i1s = min(len(x_mean), int(round((t0 + right - a)*fs)))
+            return i0s, i1s
+        i0_loc, i1_loc   = _slice_idx(t0_net, -2.5, +2.5)
+        i0_base, i1_base = _slice_idx(t0_net, -5.0, -2.0)
+        msc_loc_vals  = _msc_f0_series(x_mean[i0_loc:i1_loc],  y_ref[i0_loc:i1_loc],  fs, center_hz, win=1.0, step=0.1)
+        msc_base_vals = _msc_f0_series(x_mean[i0_base:i1_base], y_ref[i0_base:i1_base], fs, center_hz, win=1.0, step=0.1)
+        msc_peak      = float(np.nanmax(msc_loc_vals))   if msc_loc_vals.size  else np.nan
+        msc_mean_loc  = float(np.nanmean(msc_loc_vals))  if msc_loc_vals.size  else np.nan
+        msc_base      = float(np.nanmean(msc_base_vals)) if msc_base_vals.size else np.nan
+        msc_auc_loc   = float(msc_mean_loc * max(0.0, (i1_loc - i0_loc)/fs)) if np.isfinite(msc_mean_loc) else np.nan
+
         # SR envelope summaries from reference channel z(t)
         i0w = max(0, int(np.floor(a*fs)))
         i1w = min(len(z), int(np.ceil(b*fs)))
@@ -495,6 +541,8 @@ def detect_ignitions_session(
             'fs_z': fs_z, 'fs_auc': fs_auc, 'HSI': HSI, 'MaxH': MaxH, 'MaxH_overtone': MaxH_ov, 'PEL_sec': PEL,
             'seed_ch': seed_ch, 'seed_roi': seed_roi, 'spread_time_sec': spread, 'SF': SF,
             'msc_7p83_sr': msc_sr, 'msc_7p83_v': msc_v,
+            'msc_7p83_v_peak': msc_peak, 'msc_7p83_v_mean_local': msc_mean_loc,
+            'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
             'sr_z_max': sr_z_max, 'sr_z_peak_t': sr_z_peak_t,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
             'type_label': type_label,
@@ -592,12 +640,13 @@ def detect_ignitions_session(
         events.to_csv(os.path.join(out_dir,'event_passport.csv'), index=False)
 
     if verbose:
-        print("\n=== Ignition Detection — Session Summary ===")
-        print(f"SR reference: {sr_channel}")
-        print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
-        print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
-        print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
-        print(f"Event SR mode: {sr_reference}")
+        # print("\n=== Ignition Detection — Session Summary ===")
+        # print(f"Ignition windows (rounded, whole seconds): {ignition_windows_rounded}")
+        # print(f"SR reference: {sr_channel}")
+        # print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
+        # print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
+        # print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
+        # print(f"Event SR mode: {sr_reference}")
         harm_src = 'custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'
         print(f"PEL gamma band: {gamma_band[0]:.1f}–{gamma_band[1]:.1f} Hz; Harmonics (valid, {harm_src}): {np.round(valid_harmonics,3)}")
 
@@ -614,13 +663,15 @@ def detect_ignitions_session(
             dur   = events['duration_s'].to_numpy()
             srmax = events['sr_z_max'].to_numpy()
             srpm5 = events['sr_z_mean_pm5'].to_numpy()
-            msc_v = events['msc_7p83_v'].to_numpy() if 'msc_7p83_v' in events.columns else np.array([])
+            msc_v  = events['msc_7p83_v'].to_numpy()  if 'msc_7p83_v'  in events.columns else np.array([])
+            msc_pk = events['msc_7p83_v_peak'].to_numpy() if 'msc_7p83_v_peak' in events.columns else np.array([])
 
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
             print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
             print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
             print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
             print(f"  MSC@~7.83 (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
+            print(f"  MSC@~7.83 peak         — median [IQR]: {fmt_iqr(msc_pk)}")
             print(f"  Coverage of recording  — {rec_cov:.2f}%")
 
             # event-centric
@@ -670,7 +721,7 @@ def detect_ignitions_session(
             except Exception:
                 pass
 
-        print(f"Files written to: {out_dir}")
+        print(f"\nFiles written to: {out_dir}")
         print("  - sr_env_z.png, R_timeseries.png, ETA_zR.png, MaxH_hz_distribution.png")
         print("  - events.csv, summary.csv, event_passport.csv")
 
@@ -697,3 +748,1094 @@ def detect_ignitions_session(
         'harmonics_source': ('custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples')
     }
     return result, ignition_windows_rounded
+
+# -----------------------------
+# Plotting helpers: PSD & RBP
+# -----------------------------
+
+
+def _extract_eeg_matrix(RECORDZ: pd.DataFrame, eeg_channels: Optional[List[str]] = None) -> Tuple[np.ndarray, np.ndarray, float, List[str]]:
+    """Return X (n_ch,n_samp), time vector t, fs, and channel list from RECORDZ."""
+    time_col = ensure_timestamp_column(RECORDZ, time_col='Timestamp', default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X))
+    return X[:, :L], t[:L], fs, eeg_channels
+
+
+def _welch_psd(x: np.ndarray, fs: float, nperseg: Optional[int] = None, noverlap: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+    """Welch PSD for a 1-D signal x."""
+    if nperseg is None:
+        nperseg = int(round(2.0*fs))
+    if noverlap is None:
+        noverlap = nperseg//2
+    f, Pxx = signal.welch(x, fs=fs, nperseg=nperseg, noverlap=noverlap)
+    return f, Pxx
+
+
+def _band_power_from_psd(f: np.ndarray, Pxx: np.ndarray, f_lo: float, f_hi: float) -> float:
+    mask = (f >= f_lo) & (f <= f_hi)
+    if not np.any(mask):
+        return 0.0
+    return float(np.trapz(Pxx[mask], f[mask]))
+
+
+def plot_psd_pre_peak_post(
+    RECORDZ: pd.DataFrame,
+    events_df: pd.DataFrame,
+    event_index: int,
+    eeg_channels: Optional[List[str]] = None,
+    center_hz: float = 7.83,
+    harmonics_hz: Optional[List[float]] = None,
+    harmonic_bw_hz: float = 0.35,
+    out_path: str = 'psd_pre_peak_post.png'
+) -> str:
+    """
+    Make the hero PSD overlay (baseline, crest, afterglow) for a single event with harmonic annotations.
+    Windows (relative to t0_net): baseline [-5,-2] s, crest [-1.5,+1.5] s, afterglow [+2,+5] s.
+    """
+    assert 0 <= event_index < len(events_df)
+    row = events_df.iloc[event_index]
+    t0 = float(row['t0_net'])
+
+    X, t, fs, chans = _extract_eeg_matrix(RECORDZ, eeg_channels)
+    x_mean = X.mean(axis=0)
+
+    def _slice(left, right):
+        i0 = max(0, int(round((t0+left - t[0])*fs)))
+        i1 = min(len(x_mean), int(round((t0+right - t[0])*fs)))
+        return i0, i1
+
+    # segments
+    i0_b, i1_b = _slice(-5.0, -2.0)
+    i0_c, i1_c = _slice(-1.5, +1.5)
+    i0_a, i1_a = _slice(+2.0, +5.0)
+
+    segs = {
+        'Baseline': x_mean[i0_b:i1_b],
+        'Crest':    x_mean[i0_c:i1_c],
+        'Afterglow':x_mean[i0_a:i1_a]
+    }
+
+    plt.figure(figsize=(8,4))
+    colors = {'Baseline':'#888888','Crest':'#d62728','Afterglow':'#1f77b4'}
+    f_peak = {}
+    for label, seg in segs.items():
+        if seg.size < int(fs):
+            continue
+        f, Pxx = _welch_psd(seg, fs)
+        # dB scale for readability
+        Pxx_db = 10.0*np.log10(Pxx + 1e-18)
+        plt.plot(f, Pxx_db, lw=1.6, label=label, color=colors[label])
+        f_peak[label] = (f, Pxx_db)
+
+    # Harmonic lines
+    if harmonics_hz is None or len(harmonics_hz) == 0:
+        harmonics_hz = [center_hz * k for k in (1,2,3,4,5,6) if center_hz*k < fs/2.0]
+    for f0 in harmonics_hz:
+        plt.axvspan(f0-harmonic_bw_hz, f0+harmonic_bw_hz, color='orange', alpha=0.1)
+        plt.axvline(f0, color='orange', alpha=0.6, lw=0.8)
+
+    plt.xlim(2, 60)
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('PSD (dB)')
+    plt.title('PSD: Baseline vs Crest vs Afterglow (Event #{})'.format(event_index))
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+    return out_path
+
+
+def plot_harmonic_rbp_bar(
+    RECORDZ: pd.DataFrame,
+    events_df: pd.DataFrame,
+    event_index: int,
+    eeg_channels: Optional[List[str]] = None,
+    center_hz: float = 7.83,
+    harmonics_hz: Optional[List[float]] = None,
+    harmonic_bw_hz: float = 0.35,
+    total_band: Tuple[float,float] = (4.0, 60.0),
+    out_path: str = 'harmonic_rbp_bar.png'
+) -> str:
+    """Barplot of Relative Band Power for each harmonic at crest vs baseline for one event."""
+    assert 0 <= event_index < len(events_df)
+    row = events_df.iloc[event_index]
+    t0 = float(row['t0_net'])
+
+    X, t, fs, chans = _extract_eeg_matrix(RECORDZ, eeg_channels)
+    x_mean = X.mean(axis=0)
+
+    def _slice(left, right):
+        i0 = max(0, int(round((t0+left - t[0])*fs)))
+        i1 = min(len(x_mean), int(round((t0+right - t[0])*fs)))
+        return i0, i1
+
+    # Define windows
+    i0_b, i1_b = _slice(-5.0, -2.0)   # baseline
+    i0_c, i1_c = _slice(-1.5, +1.5)   # crest
+
+    seg_b = x_mean[i0_b:i1_b]; seg_c = x_mean[i0_c:i1_c]
+    f_b, P_b = _welch_psd(seg_b, fs); f_c, P_c = _welch_psd(seg_c, fs)
+
+    if harmonics_hz is None or len(harmonics_hz) == 0:
+        harmonics_hz = [center_hz * k for k in (1,2,3,4,5,6) if center_hz*k < fs/2.0]
+
+    # total power for RBP normalization
+    Ptot_b = _band_power_from_psd(f_b, P_b, total_band[0], total_band[1])
+    Ptot_c = _band_power_from_psd(f_c, P_c, total_band[0], total_band[1])
+
+    rbp_b, rbp_c = [], []
+    for f0 in harmonics_hz:
+        rbp_b.append(_band_power_from_psd(f_b, P_b, f0-harmonic_bw_hz, f0+harmonic_bw_hz) / (Ptot_b + 1e-18))
+        rbp_c.append(_band_power_from_psd(f_c, P_c, f0-harmonic_bw_hz, f0+harmonic_bw_hz) / (Ptot_c + 1e-18))
+
+    inds = np.arange(len(harmonics_hz))
+    width = 0.38
+    plt.figure(figsize=(8,4))
+    plt.bar(inds - width/2, rbp_b, width=width, color='#888888', label='Baseline')
+    plt.bar(inds + width/2, rbp_c, width=width, color='#d62728', label='Crest')
+    for i,(b,c) in enumerate(zip(rbp_b, rbp_c)):
+        plt.text(i - 0.25, max(b,c)+0.005, f"Δ={100*(c-b):.1f}%", fontsize=8)
+    plt.xticks(inds, [f"{f0:.2f}" for f0 in harmonics_hz], rotation=0)
+    plt.xlabel('Harmonic center (Hz)')
+    plt.ylabel('Relative Band Power (fraction of {}–{} Hz)'.format(*total_band))
+    plt.title('Harmonic RBP: Baseline vs Crest (Event #{})'.format(event_index))
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=140)
+    plt.close()
+    return out_path
+
+
+def make_ignition_hero_figures(
+    RECORDZ: pd.DataFrame,
+    events_csv_path: str,
+    event_index: int,
+    eeg_channels: Optional[List[str]] = None,
+    center_hz: float = 7.83,
+    harmonics_hz: Optional[List[float]] = None,
+    harmonic_bw_hz: float = 0.35,
+    out_dir: str = '.'
+) -> Dict[str,str]:
+    """Convenience wrapper: generates the PSD overlay and the harmonic RBP barplot for one event."""
+    events_df = pd.read_csv(events_csv_path)
+    os.makedirs(out_dir, exist_ok=True)
+    psd_path = os.path.join(out_dir, f'psd_pre_peak_post_evt{event_index}.png')
+    rbp_path = os.path.join(out_dir, f'harmonic_rbp_bar_evt{event_index}.png')
+    plot_psd_pre_peak_post(RECORDZ, events_df, event_index, eeg_channels, center_hz, harmonics_hz, harmonic_bw_hz, psd_path)
+    plot_harmonic_rbp_bar(RECORDZ, events_df, event_index, eeg_channels, center_hz, harmonics_hz, harmonic_bw_hz, (4,60), rbp_path)
+    return {'psd': psd_path, 'rbp': rbp_path}
+
+
+# -----------------------------
+# Animation: Relative Band Power (per band)
+# -----------------------------
+
+def _compute_rbp_timeseries(
+    RECORDZ: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float,float]] = None,
+    bands: Optional[List[Tuple[str,Tuple[float,float]]]] = None,
+    total_band: Tuple[float,float] = (4.0, 60.0),
+    win_sec: float = 1.0,
+    step_sec: float = 0.1,
+    combine: str = 'mean'
+) -> Tuple[np.ndarray, np.ndarray, List[str], float]:
+    """
+    Compute sliding-window Relative Band Power (RBP) time series.
+    Returns times (t_mid), RBP array (n_bands x n_times), band labels, fs.
+    """
+    if bands is None:
+        bands = [
+            ('Delta', (0.5, 4.0)),
+            ('Theta', (4.0, 8.0)),
+            ('Alpha', (8.0, 12.0)),
+            ('BetaL', (12.0, 20.0)),
+            ('BetaH', (20.0, 35.0)),
+            ('Gamma', (35.0, 60.0)),
+        ]
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X))
+    X = X[:, :L]; t = t[:L]
+
+    if t_range is None:
+        t0, t1 = float(t[0]), float(t[-1])
+    else:
+        t0, t1 = t_range
+    i0 = max(0, int(round((t0 - t[0])*fs)))
+    i1 = min(L, int(round((t1 - t[0])*fs)))
+
+    if combine == 'mean':
+        x = X[:, i0:i1].mean(axis=0)
+    elif combine == 'median':
+        x = np.median(X[:, i0:i1], axis=0)
+    else:
+        # assume combine is a single channel name
+        if combine in RECORDZ.columns:
+            x = get_series(RECORDZ, combine)[i0:i1]
+        else:
+            # fallback to first requested channel
+            x = X[0, i0:i1]
+
+    nwin = int(round(win_sec*fs)); nstep = int(round(step_sec*fs))
+    t_mids, rbp_list = [], []
+
+    # Precompute FFT frequency grid via Welch
+    for s in range(i0, i1 - nwin + 1, nstep):
+        seg = x[s - i0 : s - i0 + nwin]
+        f, Pxx = signal.welch(seg, fs=fs, nperseg=nwin)
+        # Compute power per band and normalize so each time window sums to 1.0
+        powers = []
+        for _, (lo, hi) in bands:
+            powers.append(_band_power_from_psd(f, Pxx, lo, hi))
+        Psum = float(np.sum(powers)) + 1e-18
+        rbp = [p / Psum for p in powers]
+        rbp_list.append(rbp)
+        t_mid = t[0] + (s + nwin/2)/fs
+        t_mids.append(t_mid)
+
+    RBP = np.array(rbp_list).T  # n_bands x n_times
+    return np.array(t_mids), RBP, [b[0] for b in bands], fs
+
+
+def animate_rbp(
+    RECORDZ: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',  # 'mean' | 'median' | channel name like 'EEG.F4'
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float,float]] = None,
+    bands: Optional[List[Tuple[str,Tuple[float,float]]]] = None,
+    total_band: Tuple[float,float] = (4.0, 60.0),
+    win_sec: float = 1.0,
+    step_sec: float = 0.1,
+    fps: int = 20,
+    out_path: str = 'rbp_animation.mp4',
+    show_inline: bool = False,
+    view_sec: Optional[float] = None,  # <-- fixed-width sliding window (e.g., 20.0),
+    fill_alpha: float = 0.0
+):
+    """
+    Create an animation of the stacked Relative Band Power over time for a selected electrode or
+    a combined group (mean/median). Saves to MP4/GIF based on extension. If show_inline=True,
+    returns the matplotlib.animation object for Jupyter display.
+    """
+    import matplotlib.animation as animation
+
+    t_mid, RBP, labels, fs = _compute_rbp_timeseries(
+        RECORDZ, eeg_channels=eeg_channels, time_col=time_col, t_range=t_range,
+        bands=bands, total_band=total_band, win_sec=win_sec, step_sec=step_sec, combine=combine)
+
+    if RBP.size == 0:
+        raise ValueError('No RBP data to animate (check t_range or window settings).')
+
+    color_map = {
+        'Delta':'#1f77b4', 'Theta':'#ff7f0e', 'Alpha':'#2ca02c',
+        'BetaL':'#d62728', 'BetaH':'#9467bd', 'Gamma':'#8c564b'
+    }
+    colors = [color_map.get(lbl, None) for lbl in labels]
+
+    fig, ax = plt.subplots(figsize=(8,3.2))
+    # leave room on the right for an outside legend
+    fig.subplots_adjust(right=0.78)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Relative band power (fraction)')
+    ax.set_title(f'RBP (per band) — {combine} of {len(eeg_channels) if eeg_channels else "all EEG"} channels')
+
+    # helper to get left index for a fixed view window ending at t_mid[k]
+    import bisect
+    def _left_index(k):
+        if view_sec is None:
+            return 0
+        t_right = t_mid[k]
+        t_left  = t_right - view_sec
+        i_left  = bisect.bisect_left(t_mid, t_left)
+        return max(0, i_left)
+
+    def _draw_frame(k):
+        ax.clear()
+        ax.set_ylim(0, 1)
+        ax.set_xlabel('Time (s)'); ax.set_ylabel('Relative band power (fraction)')
+        ax.set_title(f'RBP (per band) — {combine} of {len(eeg_channels) if eeg_channels else "all EEG"} channels')
+        i_left = _left_index(k)
+        t_slice = t_mid[i_left:k+1]
+        rbp_slice = RBP[:, i_left:k+1]
+        # Set x-limits to fixed sliding window if requested
+        if view_sec is not None:
+            ax.set_xlim(t_mid[k] - view_sec, t_mid[k])
+        else:
+            ax.set_xlim(t_mid[0], t_mid[-1])
+        # Plot each band as its own line (not stacked)
+        for i, (lbl, col) in enumerate(zip(labels, colors)):
+            y = rbp_slice[i]
+            ax.plot(t_slice, y, color=col, lw=1.8, label=lbl, zorder=3)
+            if fill_alpha and fill_alpha > 0:
+                ax.fill_between(t_slice, 0, y, color=col, alpha=fill_alpha, zorder=2)
+        # Legend outside to the right (always visible during animation)
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=8, ncol=1)
+        return []
+
+    anim = animation.FuncAnimation(fig, _draw_frame, frames=len(t_mid), interval=1000/fps, blit=False)
+
+    # Save using writer based on extension
+    ext = out_path.split('.')[-1].lower()
+    if ext in ('mp4','m4v','mov'):
+        try:
+            writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(out_path, writer=writer, dpi=140)
+        except Exception:
+            # fallback if ffmpeg missing → save GIF instead
+            from matplotlib.animation import PillowWriter
+            gif_path = out_path.rsplit('.', 1)[0] + '.gif'
+            anim.save(gif_path, writer=PillowWriter(fps=fps))
+            out_path = gif_path
+    elif ext in ('gif',):
+        from matplotlib.animation import PillowWriter
+        anim.save(out_path, writer=PillowWriter(fps=fps))
+    else:
+        # default to mp4
+        try:
+            writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(out_path, writer=writer, dpi=140)
+        except Exception:
+            from matplotlib.animation import PillowWriter
+            gif_path = out_path + '.gif'
+            anim.save(gif_path, writer=PillowWriter(fps=fps))
+            out_path = gif_path
+
+    plt.close(fig)
+
+    if show_inline:
+        return anim, out_path
+    return out_path
+
+# -----------------------------
+# Delta-band power surge scanner (micro-spectrogram)
+# -----------------------------
+
+def plot_delta_spectrogram(
+    RECORDZ: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',      # 'mean' | 'median' | channel name e.g. 'EEG.F4'
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float,float]] = None,
+    baseline_range: Optional[Tuple[float,float]] = None,
+    f_lo: float = 0.5,
+    f_hi: float = 4.0,
+    win_sec: float = 12.0,
+    step_sec: float = 1.0,
+    out_path: str = 'delta_spectrogram.png',
+    show: bool = True,
+    return_peaks: bool = False
+):
+    """
+    Fast view of *which delta frequencies* (0.5–4 Hz) show surges.
+    Computes sliding-window Welch PSD → z-scores vs baseline per frequency → heatmap (time × freq).
+
+    Returns `out_path` (and optional peaks DataFrame if `return_peaks=True`).
+    """
+    # Extract data
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X)); X = X[:, :L]; t = t[:L]
+
+    # Time indices
+    if t_range is None:
+        t0, t1 = float(t[0]), float(t[-1])
+    else:
+        t0, t1 = t_range
+    i0 = max(0, int(round((t0 - t[0])*fs)))
+    i1 = min(L, int(round((t1 - t[0])*fs)))
+
+    # Combine channels
+    if combine == 'mean':
+        x = X[:, i0:i1].mean(axis=0)
+    elif combine == 'median':
+        x = np.median(X[:, i0:i1], axis=0)
+    else:
+        x = get_series(RECORDZ, combine)[i0:i1] if combine in RECORDZ.columns else X[0, i0:i1]
+
+    nwin = int(round(win_sec*fs)); nstep = int(round(step_sec*fs))
+    t_mids, rows = [], []
+    f_ref, mask = None, None
+
+    # Slide and compute PSD rows
+    for s in range(0, len(x) - nwin + 1, nstep):
+        seg = x[s:s+nwin]
+        f, Pxx = signal.welch(seg, fs=fs, nperseg=nwin)
+        if f_ref is None:
+            f_ref = f
+            mask = (f_ref >= f_lo) & (f_ref <= f_hi)
+        rows.append(Pxx[mask])
+        t_mids.append(t0 + (s + nwin/2)/fs)
+
+    if not rows:
+        raise ValueError('No windows for given settings; decrease win_sec or expand t_range.')
+
+    P = np.vstack(rows)              # shape: n_times × n_freqs(delta)
+    f_delta = f_ref[mask]
+    t_mid = np.array(t_mids)
+
+    # Baseline (first N windows or given range)
+    if baseline_range is not None:
+        b0 = max(0, int(round((baseline_range[0] - t0)*fs)))
+        b1 = min(len(x), int(round((baseline_range[1] - t0)*fs)))
+        # windows overlapping baseline
+        b_inds = [k for k in range(0, len(x) - nwin + 1, nstep)
+                  if (k >= b0) and (k+nwin <= b1)]
+        if not b_inds:
+            # fallback: first 10 windows
+            nB = min(10, P.shape[0])
+            B = P[:nB]
+        else:
+            B = np.vstack([P[(k//nstep)] for k in b_inds if (k//nstep) < P.shape[0]])
+    else:
+        nB = min(10, P.shape[0])
+        B = P[:nB]
+
+    mu = np.nanmean(B, axis=0)
+    sd = np.nanstd(B, axis=0) + 1e-12
+    Z = (P - mu) / sd   # z-score per frequency over time
+
+    # Plot heatmap (time × freq)
+    plt.figure(figsize=(8, 3.2))
+    plt.pcolormesh(t_mid, f_delta, Z.T, shading='auto', cmap='magma')
+    plt.colorbar(label='Δ Power (z)')
+    plt.xlabel('Time (s)'); plt.ylabel('Frequency (Hz)')
+    plt.title(f'Delta micro-spectrogram (win={win_sec:.1f}s, step={step_sec:.1f}s) — {combine}')
+    plt.tight_layout(); plt.savefig(out_path, dpi=140)
+    if show: plt.show()
+    plt.close()
+
+    if not return_peaks:
+        return out_path
+
+    # Peak tracker: for each time, the max-z delta freq and its z
+    pk_idx = np.nanargmax(Z, axis=1)
+    pk_freq = f_delta[pk_idx]
+    pk_z = Z[np.arange(Z.shape[0]), pk_idx]
+    df_peaks = pd.DataFrame({'t_mid': t_mid, 'f_peak_hz': pk_freq, 'z_peak': pk_z})
+    return out_path, df_peaks
+
+# -----------------------------
+# Delta peak extraction & cohort hotspots
+# -----------------------------
+
+def _parabolic_peak_refine(f: np.ndarray, y: np.ndarray, i: int) -> float:
+    """Quadratic (parabolic) interpolation around bin i (use log power).
+    Returns refined frequency in Hz.
+    """
+    if i <= 0 or i >= len(y)-1:
+        return float(f[i])
+    y0, y1, y2 = np.log(y[i-1]+1e-18), np.log(y[i]+1e-18), np.log(y[i+1]+1e-18)
+    denom = (y0 - 2*y1 + y2)
+    if abs(denom) < 1e-18:
+        return float(f[i])
+    delta = 0.5*(y0 - y2)/denom
+    df = f[1]-f[0]
+    return float(f[i] + delta*df)
+
+
+def delta_peaks_for_event(
+    RECORDZ: pd.DataFrame,
+    t0_net: float,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',        # 'mean' | 'median' | channel name
+    time_col: str = 'Timestamp',
+    crest_win: float = 3.0,       # PSD window centered at t0
+    baseline_range: Optional[Tuple[float,float]] = None,
+    f_lo: float = 0.5,
+    f_hi: float = 4.0,
+    top_n: int = 3
+) -> pd.DataFrame:
+    """Return up to top_n delta-frequency peaks at the ignition crest with z vs baseline.
+    Columns: f_hz (refined), z_surge, raw_power, baseline_mu, baseline_sd.
+    """
+    # Extract signal
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X)); X = X[:, :L]; t = t[:L]
+
+    # Combine
+    if combine == 'mean':
+        x = X.mean(axis=0)
+    elif combine == 'median':
+        x = np.median(X, axis=0)
+    else:
+        x = get_series(RECORDZ, combine)
+
+    # Crest window PSD
+    i0 = max(0, int(round((t0_net - crest_win/2 - t[0])*fs)))
+    i1 = min(L, int(round((t0_net + crest_win/2 - t[0])*fs)))
+    seg = x[i0:i1]
+    f, P = signal.welch(seg, fs=fs, nperseg=int(round(crest_win*fs)))
+    mask = (f >= f_lo) & (f <= f_hi)
+    fD, PD = f[mask], P[mask]
+
+    # Baseline PSD
+    if baseline_range is not None:
+        b0 = max(0, int(round((baseline_range[0]-t[0])*fs)))
+        b1 = min(L, int(round((baseline_range[1]-t[0])*fs)))
+        bseg = x[b0:b1]
+    else:
+        # default: equally sized pre-crest chunk
+        j1 = max(0, i0 - (i1 - i0))
+        bseg = x[j1:i0]
+    fb, Pb = signal.welch(bseg, fs=fs, nperseg=int(round(crest_win*fs)))
+    PbD = Pb[(fb >= f_lo) & (fb <= f_hi)]
+    mu, sd = float(np.mean(PbD)), float(np.std(PbD) + 1e-18)
+
+    # Find peaks in delta band
+    from scipy.signal import find_peaks
+    peak_idx, _ = find_peaks(PD, distance=max(1, int(0.2/((fD[1]-fD[0]) or 1e-6))))
+    if peak_idx.size == 0:
+        return pd.DataFrame(columns=['f_hz','z_surge','raw_power','baseline_mu','baseline_sd'])
+
+    # Rank by z and keep top_n
+    zvals = (PD[peak_idx] - mu) / sd
+    order = np.argsort(zvals)[::-1][:top_n]
+
+    rows = []
+    for j in order:
+        i = int(peak_idx[j])
+        f_refined = _parabolic_peak_refine(fD, PD, i)
+        rows.append({'f_hz': f_refined,
+                     'z_surge': float(zvals[j]),
+                     'raw_power': float(PD[i]),
+                     'baseline_mu': mu,
+                     'baseline_sd': sd})
+    return pd.DataFrame(rows)
+
+
+def summarize_delta_hotspots(
+    RECORDZ: pd.DataFrame,
+    events_df: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',
+    time_col: str = 'Timestamp',
+    crest_win: float = 3.0,
+    baseline_offset: Tuple[float,float] = (-10.0, -5.0),
+    f_lo: float = 0.5, f_hi: float = 4.0,
+    top_n: int = 2,
+    out_path: str = 'delta_hotspots.png'
+) -> Tuple[pd.DataFrame, str]:
+    """Scan all events for delta crest peaks, aggregate, and plot KDE+hist of hotspots.
+    Returns (peaks_dataframe, figure_path).
+    """
+    all_rows = []
+    for _, row in events_df.iterrows():
+        t0 = float(row['t0_net'])
+        peaks = delta_peaks_for_event(
+            RECORDZ, t0, eeg_channels=eeg_channels, combine=combine, time_col=time_col,
+            crest_win=crest_win,
+            baseline_range=(t0+baseline_offset[0], t0+baseline_offset[1]),
+            f_lo=f_lo, f_hi=f_hi, top_n=top_n
+        )
+        if not peaks.empty:
+            peaks = peaks.assign(t0_net=t0)
+            all_rows.append(peaks)
+    if not all_rows:
+        return pd.DataFrame(columns=['f_hz','z_surge','t0_net']), ''
+
+    DF = pd.concat(all_rows, ignore_index=True)
+
+    # Plot histogram + KDE
+    import seaborn as sns
+    plt.figure(figsize=(7.5,3.2))
+    sns.histplot(DF['f_hz'], bins=np.linspace(f_lo, f_hi, 30), stat='count', color='#2ca02c', alpha=0.35, edgecolor='k')
+    try:
+        sns.kdeplot(DF['f_hz'], bw_adjust=0.5, color='#d62728', lw=2)
+    except Exception:
+        pass
+    plt.xlabel('Delta peak frequency at crest (Hz)')
+    plt.ylabel('Event count')
+    plt.title('Delta hotspots across ignitions')
+    plt.tight_layout(); plt.savefig(out_path, dpi=140)
+    plt.close()
+    return DF[['t0_net','f_hz','z_surge']], out_path
+
+# -----------------------------
+# Option A: MeanShift clustering of delta surge frequencies (with safe fallback)
+# -----------------------------
+
+def cluster_delta_hotspots_meanshift(
+    DF: pd.DataFrame,
+    z_thresh: float = 2.0,
+    bandwidth_quantile: float = 0.2,
+    fallback_bw: float = 0.05,
+    B: int = 2000,
+    alpha: float = 0.05
+) -> pd.DataFrame:
+    """Cluster crest delta peaks (Hz) using MeanShift with robust bandwidth fallback,
+    and return cluster centers with 95% bootstrap CIs and counts.
+
+    Parameters
+    ----------
+    DF : DataFrame with columns ['t0_net','f_hz','z_surge'] as returned by summarize_delta_hotspots.
+    z_thresh : keep only peaks with z_surge >= z_thresh (default 2.0) for surges.
+    bandwidth_quantile : quantile passed to sklearn.estimate_bandwidth.
+    fallback_bw : minimal bandwidth (Hz) if estimate_bandwidth returns <= 0.
+    B : bootstrap iterations for CI.
+    alpha : CI level (default 0.05 → 95% CI).
+
+    Returns
+    -------
+    DataFrame with columns:
+      center_hz, ci_low, ci_high, n_events, mean_z, median_z, bandwidth
+    Sorted by n_events then mean_z.
+    """
+    import numpy as np
+    import pandas as pd
+    from sklearn.cluster import MeanShift, estimate_bandwidth
+
+    surge = DF.loc[DF['z_surge'] >= z_thresh].copy()
+    if surge.empty:
+        return pd.DataFrame(columns=['center_hz','ci_low','ci_high','n_events','mean_z','median_z','bandwidth'])
+
+    X = surge[['f_hz']].values.astype(float)
+
+    # bandwidth estimation with safe fallback
+    try:
+        bw = estimate_bandwidth(X, quantile=bandwidth_quantile, n_samples=min(len(X), 500))
+    except Exception:
+        bw = 0.0
+    if (not np.isfinite(bw)) or (bw <= 1e-6):
+        rng = float(np.max(X) - np.min(X))
+        bw = max(fallback_bw, 0.10 * (rng + 1e-6))
+
+    ms = MeanShift(bandwidth=bw, bin_seeding=True).fit(X)
+    surge['cluster'] = ms.labels_
+
+    # bootstrap CI for weighted mean center
+    rng = np.random.default_rng(0)
+    def boot_ci(vals, weights):
+        vals = np.asarray(vals)
+        w = np.asarray(weights)
+        w = w / (w.sum() + 1e-18)
+        boots = []
+        for _ in range(B):
+            idx = rng.choice(len(vals), size=len(vals), replace=True, p=w)
+            boots.append(np.average(vals[idx], weights=w[idx]))
+        lo, hi = np.percentile(boots, [100*alpha/2, 100*(1-alpha/2)])
+        return float(lo), float(hi)
+
+    rows = []
+    for k in sorted(surge['cluster'].unique()):
+        sub = surge.loc[surge['cluster']==k]
+        center = float(np.average(sub['f_hz'], weights=sub['z_surge']))
+        lo, hi = boot_ci(sub['f_hz'].values, sub['z_surge'].values)
+        rows.append({
+            'center_hz': center,
+            'ci_low': lo,
+            'ci_high': hi,
+            'n_events': int(len(sub)),
+            'mean_z': float(sub['z_surge'].mean()),
+            'median_z': float(sub['z_surge'].median()),
+            'bandwidth': float(bw)
+        })
+
+    out = (pd.DataFrame(rows)
+           .sort_values(['n_events','mean_z'], ascending=[False, False])
+           .reset_index(drop=True))
+    return out
+
+# -----------------------------
+# Delta PSD animation (frequency sweep over time) — v2 with dynamic y-limits + fill shading
+# -----------------------------
+
+def animate_delta_psd(
+    RECORDZ: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',          # 'mean' | 'median' | channel name like 'EEG.F4'
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float,float]] = None,   # (t0, t1) seconds
+    f_lo: float = 0.5,
+    f_hi: float = 4.0,
+    win_sec: float = 12.0,
+    step_sec: float = 0.25,
+    detrend: bool = True,
+    norm: str = 'z',                # 'z' | 'rel' | None
+    baseline_range: Optional[Tuple[float,float]] = None,
+    fps: int = 15,
+    out_path: str = 'delta_psd_anim.mp4',
+    show_inline: bool = False,
+    title: Optional[str] = None,
+    fill_alpha: float = 0.15,       # <-- shaded fill under curve
+    dyn_ylim: bool = True,          # <-- update y-limits per frame to avoid clipping
+    ylim_pad: float = 1.10          # <-- multiplier pad for headroom
+):
+    """
+    Animate delta-band PSD over time for selected electrodes.
+    x-axis: frequency in [f_lo, f_hi]; y-axis: PSD response per frequency.
+
+    dyn_ylim = True  → compute per-frame max and update ax.set_ylim each frame
+    fill_alpha > 0   → draw filled area under the curve for visibility
+    """
+    import matplotlib.animation as animation
+
+    # --- 1) Extract & combine data
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X)); X = X[:, :L]; t = t[:L]
+
+    if t_range is None:
+        t0, t1 = float(t[0]), float(t[-1])
+    else:
+        t0, t1 = t_range
+    i0 = max(0, int(round((t0 - t[0])*fs)))
+    i1 = min(L, int(round((t1 - t[0])*fs)))
+
+    if combine == 'mean':
+        x = X[:, i0:i1].mean(axis=0)
+    elif combine == 'median':
+        x = np.median(X[:, i0:i1], axis=0)
+    else:
+        x = get_series(RECORDZ, combine)[i0:i1] if combine in RECORDZ.columns else X[0, i0:i1]
+
+    if detrend:
+        x = signal.detrend(x)
+
+    # --- 2) Sliding-window PSDs
+    nwin = int(round(win_sec*fs)); nstep = int(round(step_sec*fs))
+    frames, t_mids = [], []
+    f_ref = None
+
+    for s in range(0, len(x) - nwin + 1, nstep):
+        seg = x[s:s+nwin]
+        f, Pxx = signal.welch(seg, fs=fs, nperseg=nwin)
+        if f_ref is None:
+            f_ref = f
+        frames.append(Pxx)
+        t_mids.append(t0 + (s + nwin/2)/fs)
+
+    if not frames:
+        raise ValueError('No frames to animate; adjust t_range/win_sec/step_sec.')
+
+    F = np.vstack(frames)           # n_frames × n_freqs
+    mask = (f_ref >= f_lo) & (f_ref <= f_hi)
+    f_delta = f_ref[mask]
+    F = F[:, mask]
+
+    # --- 3) Normalize
+    if norm == 'z':
+        if baseline_range is not None:
+            b0 = max(0, int(round((baseline_range[0]-t0)*fs)))
+            b1 = min(len(x), int(round((baseline_range[1]-t0)*fs)))
+            b_idx = [k for k in range(0, len(x) - nwin + 1, nstep) if (k >= b0) and (k+nwin <= b1)]
+            if b_idx:
+                B = F[[k//nstep for k in b_idx if (k//nstep) < F.shape[0]]]
+            else:
+                B = F[:min(10, F.shape[0])]
+        else:
+            B = F[:min(10, F.shape[0])]
+        mu = np.nanmean(B, axis=0); sd = np.nanstd(B, axis=0) + 1e-12
+        Fn = (F - mu) / sd
+    elif norm == 'rel':
+        A = np.trapz(F, f_delta, axis=1)[:, None] + 1e-18
+        Fn = F / A
+    else:
+        Fn = F
+
+    # --- 4) Build animation
+    fig, ax = plt.subplots(figsize=(7.5, 3.2))
+    ax.set_xlim(f_lo, f_hi)
+    base_ylim = float(np.nanpercentile(Fn, 95))
+    ax.set_ylim(0, base_ylim*ylim_pad)
+    if title:
+        ax.set_title(title)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel({'z':'PSD z-score','rel':'Relative PSD','None':'PSD'}[str(norm)])
+
+    line, = ax.plot([], [], lw=2, color='#1f77b4', zorder=3)
+    fill_poly = [None]  # holder for the current PolyCollection
+
+    def _init():
+        line.set_data([], [])
+        return (line,)
+
+    def _update(i):
+        y = Fn[i]
+        if dyn_ylim:
+            ytop = float(np.nanmax(y)) * ylim_pad
+            if ytop > 0:
+                ax.set_ylim(0, ytop)
+        line.set_data(f_delta, y)
+        # shaded fill under the curve (remove previous PolyCollection safely)
+        if fill_poly[0] is not None:
+            try:
+                fill_poly[0].remove()
+            except Exception:
+                pass
+        if fill_alpha > 0:
+            fill_poly[0] = ax.fill_between(f_delta, 0, y, color='#1f77b4', alpha=fill_alpha, zorder=2)
+        ax.set_title((title or 'Delta PSD') + f"Window center: t = {t_mids[i]:.2f} s")
+        return (line,)
+
+    anim = animation.FuncAnimation(fig, _update, init_func=_init,
+                                   frames=Fn.shape[0], interval=1000/fps, blit=False)
+
+    # --- 5) Save only if not showing inline (avoid ffmpeg requirement when embedding)
+    if not show_inline:
+        ext = out_path.split('.')[-1].lower()
+        try:
+            if ext in ('mp4','m4v','mov'):
+                writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+                anim.save(out_path, writer=writer, dpi=140)
+            elif ext in ('gif',):
+                from matplotlib.animation import PillowWriter
+                anim.save(out_path, writer=PillowWriter(fps=fps))
+            else:
+                writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+                anim.save(out_path, writer=writer, dpi=140)
+        except Exception:
+            from matplotlib.animation import PillowWriter
+            gif_path = out_path.rsplit('.', 1)[0] + '.gif'
+            anim.save(gif_path, writer=PillowWriter(fps=fps))
+            out_path = gif_path
+        plt.close(fig)
+        return out_path
+
+    # Inline case: return the animation object (no saving)
+    plt.close(fig)
+    return anim, out_path
+
+
+
+# -----------------------------
+# PSD animation — Stacked ABSOLUTE power over time (all bands or custom) — v3
+#  * cumulative stacked area over time
+#  * saves movie (MP4 if ffmpeg, else GIF fallback)
+#  * optionally returns inline anim
+#  * NEW: saves a static PNG of the **last frame** (full ignition window) for one-look overview
+# -----------------------------
+
+def animate_psd_stacked(
+    RECORDZ: pd.DataFrame,
+    eeg_channels: Optional[List[str]] = None,
+    combine: str = 'mean',                  # 'mean' | 'median' | 'EEG.F4' etc.
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float,float]] = None,   # (t0, t1) seconds
+    bands: Optional[List[Tuple[str, Tuple[float,float]]]] = None,  # list of (label,(flo,fhi))
+    default_bands: str = 'canonical',       # 'canonical' | 'schumann' | 'delta6' | 'custom'
+    win_sec: float = 12.0,
+    step_sec: float = 0.25,
+    detrend: bool = True,
+    fps: int = 15,
+    out_path: str = 'psd_stacked.mp4',
+    show_inline: bool = False,
+    title: Optional[str] = None,
+    dyn_ylim: bool = True,
+    ylim_pad: float = 1.10,
+    legend_outside: bool = True,
+    save_last_frame: bool = True,
+    last_frame_path: Optional[str] = None
+):
+    """
+    Animate a *stacked area* of **absolute band power** (integrated PSD) over time across bands.
+
+    • x-axis: time (sliding window centers).  • y-axis: stacked absolute power per band (μV²).
+    • Saves to `out_path` (MP4 if ffmpeg is available; otherwise GIF fallback) and optionally returns inline anim.
+    • If `save_last_frame=True`, also saves a static PNG of the **final stacked area** (full window) to `last_frame_path`.
+
+    Presets for `bands` via `default_bands`:
+      - 'canonical' → Delta (0.5–4), Theta (4–8), Alpha (8–12), BetaL (12–20), BetaH (20–35), Gamma (35–60)
+      - 'schumann'  → SR1±0.35 (~7.45–8.15), 2× (~13–15), 3× (~19–21), 4× (~25–28), 5× (~31–35), 6× (~38–42), 7× (~45–48), 8× (~52–54)
+      - 'delta6'    → six equal slices within 0.5–4.0 Hz
+      - 'custom'    → pass explicit `bands=[('Label',(flo,fhi)), ...]`
+    """
+    import matplotlib.animation as animation
+
+    # ---- 1) Extract & combine data
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    if eeg_channels is None:
+        eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    L = min(map(len, X)); X = X[:, :L]; t = t[:L]
+
+    if t_range is None:
+        t0, t1 = float(t[0]), float(t[-1])
+    else:
+        t0, t1 = t_range
+    i0 = max(0, int(round((t0 - t[0])*fs)))
+    i1 = min(L, int(round((t1 - t[0])*fs)))
+
+    if combine == 'mean':
+        x = X[:, i0:i1].mean(axis=0)
+    elif combine == 'median':
+        x = np.median(X[:, i0:i1], axis=0)
+    else:
+        x = get_series(RECORDZ, combine)[i0:i1] if combine in RECORDZ.columns else X[0, i0:i1]
+
+    if detrend:
+        x = signal.detrend(x)
+
+    # ---- 2) Bands
+    if bands is None:
+        if default_bands == 'canonical':
+            bands = [
+                ('Delta', (0.5, 4.0)), ('Theta', (4.0, 8.0)), ('Alpha', (8.0, 12.0)),
+                ('BetaL', (12.0, 20.0)), ('BetaH', (20.0, 35.0)), ('Gamma', (35.0, 60.0))
+            ]
+        elif default_bands == 'schumann':
+            bands = [
+                ('SR1', (7.45, 8.15)), ('2x', (13.0, 15.0)), ('3x', (19.0, 21.0)), ('4x', (25.0, 28.0)),
+                ('5x', (31.0, 35.0)), ('6x', (38.0, 42.0)), ('7x', (45.0, 48.0)), ('8x', (52.0, 54.0))
+            ]
+        elif default_bands == 'delta6':
+            w = (4.0 - 0.5) / 6.0
+            bands = [(f"{0.5 + k*w:.2f}-{0.5 + (k+1)*w:.2f}", (0.5 + k*w, 0.5 + (k+1)*w)) for k in range(6)]
+        else:
+            if not bands:
+                raise ValueError("When default_bands='custom', pass non-empty `bands`.")
+
+    # ---- 3) Sliding-window PSD → absolute band powers
+    nwin = int(round(win_sec*fs)); nstep = int(round(step_sec*fs))
+    frames_bp, t_mids = [], []
+
+    for s in range(0, len(x) - nwin + 1, nstep):
+        seg = x[s:s+nwin]
+        f, Pxx = signal.welch(seg, fs=fs, nperseg=nwin)
+        bp = []
+        for _, (blo, bhi) in bands:
+            mask = (f >= blo) & (f <= bhi)
+            bp.append(float(np.trapz(Pxx[mask], f[mask])) if np.any(mask) else 0.0)
+        frames_bp.append(bp)
+        t_mids.append(t0 + (s + nwin/2)/fs)
+
+    if not frames_bp:
+        raise ValueError('No frames to animate; adjust t_range/win_sec/step_sec.')
+
+    BP = np.asarray(frames_bp)  # [n_frames × n_bands]
+    labels = [lbl for (lbl, _) in bands]
+
+    # ---- 4) Build animation (cumulative stacked area over time)
+    fig, ax = plt.subplots(figsize=(9.0, 3.6))
+    ax.set_xlim(t_mids[0], t_mids[-1])
+    total_power = BP.sum(axis=1)
+    base_ylim = float(np.nanpercentile(total_power, 95))
+    ax.set_ylim(0, base_ylim*ylim_pad)
+
+    ttl = title or f"Stacked absolute power — {combine}"
+    ax.set_title(ttl)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Absolute band power (μV²)')
+
+    palette = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b',
+               '#e377c2','#7f7f7f','#bcbd22','#17becf']
+    colors = [palette[i % len(palette)] for i in range(len(labels))]
+
+    stack_poly = [None]
+
+    def _draw_frame(k):
+        x_t = np.asarray(t_mids[:k+1])
+        Y = BP[:k+1, :].T  # n_bands × (k+1)
+        if dyn_ylim:
+            ytop = float(np.nanmax(np.sum(Y, axis=0))) * ylim_pad
+            if ytop > 0:
+                ax.set_ylim(0, ytop)
+        # remove previous stack safely
+        if stack_poly[0] is not None:
+            for coll in stack_poly[0]:
+                try:
+                    coll.remove()
+                except Exception:
+                    pass
+        stack_poly[0] = ax.stackplot(x_t, *Y, labels=labels, colors=colors, alpha=0.95)
+        ax.set_title(f"{ttl}\nWindow center: t = {t_mids[k]:.2f} s")
+        return stack_poly[0]
+
+    anim = animation.FuncAnimation(fig, _draw_frame, frames=BP.shape[0], interval=1000/fps, blit=False)
+
+    # Legend with static proxies
+    from matplotlib.patches import Patch
+    proxies = [Patch(facecolor=colors[i], label=labels[i]) for i in range(len(labels))]
+    if legend_outside:
+        fig.subplots_adjust(right=0.78)
+        ax.legend(handles=proxies, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=8, ncol=1)
+    else:
+        ax.legend(handles=proxies, frameon=False, fontsize=8, ncol=min(3, len(labels)))
+
+    # ---- 5) Save movie (MP4 if available, else GIF fallback)
+    ext = out_path.split('.')[-1].lower()
+    try:
+        if ext in ('mp4','m4v','mov'):
+            writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(out_path, writer=writer, dpi=140)
+        elif ext in ('gif',):
+            from matplotlib.animation import PillowWriter
+            anim.save(out_path, writer=PillowWriter(fps=fps))
+        else:
+            writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(out_path, writer=writer, dpi=140)
+    except Exception:
+        from matplotlib.animation import PillowWriter
+        gif_path = out_path.rsplit('.', 1)[0] + '.gif'
+        anim.save(gif_path, writer=PillowWriter(fps=fps))
+        out_path = gif_path
+
+    plt.close(fig)
+
+    # ---- 6) Save final stacked image (whole window) for one-look overview
+    saved_last = None
+    if save_last_frame:
+        if last_frame_path is None:
+            base, ext = os.path.splitext(out_path)
+            last_frame_path = base + '_last.png'
+        fig2, ax2 = plt.subplots(figsize=(9.0, 3.6))
+        ax2.set_xlim(t_mids[0], t_mids[-1])
+        # full-window Y and ylim
+        Y_full = BP.T  # n_bands × n_frames
+        ytop = float(np.nanmax(np.sum(Y_full, axis=0))) * ylim_pad
+        ax2.set_ylim(0, ytop if ytop > 0 else 1.0)
+        ax2.stackplot(np.asarray(t_mids), *Y_full, labels=labels, colors=colors, alpha=0.95)
+        # proxies for legend, title, labels
+        ax2.set_title((title or 'Stacked absolute power') + ' — last frame (full window)')
+        ax2.set_xlabel('Time (s)')
+        ax2.set_ylabel('Absolute band power (μV²)')
+        if legend_outside:
+            fig2.subplots_adjust(right=0.78)
+            ax2.legend(handles=proxies, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=8, ncol=1)
+        else:
+            ax2.legend(handles=proxies, frameon=False, fontsize=8, ncol=min(3, len(labels)))
+        fig2.tight_layout()
+        fig2.savefig(last_frame_path, dpi=140)
+        plt.close(fig2)
+        saved_last = last_frame_path
+
+    if show_inline:
+        return (anim, out_path, saved_last) if save_last_frame else (anim, out_path)
+    return (out_path, saved_last) if save_last_frame else out_path
+
+# Example
+# anim, movie_path, last_png = animate_psd_stacked(
+#     RECORDZ, eeg_channels=['EEG.F4','EEG.FC6','EEG.P8'], combine='mean',
+#     t_range=(550, 600), default_bands='canonical', win_sec=10.0, step_sec=0.1,
+#     fps=24, out_path='psd_stacked_canonical.mp4', show_inline=True,
+#     title='Stacked absolute power — canonical bands, frontal-parietal mean',
+#     save_last_frame=True
+# )
+# from IPython.display import HTML
+# HTML(anim.to_jshtml()); print('Saved:', movie_path, ' | Last-frame PNG:', last_png)
