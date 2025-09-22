@@ -1272,25 +1272,144 @@ def _infer_fs(df: pd.DataFrame, time_col: str)->float:
     if dt.size==0: raise ValueError("Cannot infer fs from time column.")
     return float(1.0/np.median(dt))
 
-def estimate_sr_harmonics(RECORDS, sr_channel='EEG.F4', fs=None,
-                          f_can=(7.83, 14.3, 20.8, 27.3, 33.8),
-                          search_halfband=0.8, nperseg_sec=32.0, overlap=0.5, time_col="Timestamp"):
+
+import numpy as np
+from scipy.signal import welch
+
+
+def _as_list(x):
+    """Return x as a Python list if x is an iterable of channel names; otherwise None.
+    Strings count as scalars (single channel), not iterables here.
+    """
+    if x is None:
+        return None
+    if isinstance(x, (list, tuple, set, np.ndarray)):
+        # Treat numpy arrays of dtype object/str as lists of names
+        return list(x)
+    return None
+
+
+def _get_channel_array(RECORDS, channels):
+    """Stack multiple channel vectors into a 2D array (n_channels, n_samples).
+    Relies on project helper `_get_channel_vector(RECORDS, ch)`.
+    """
+    arr = []
+    for ch in channels:
+        v = _get_channel_vector(RECORDS, ch)
+        v = np.asarray(v, dtype=float)
+        if v.ndim != 1:
+            raise ValueError(f"Channel {ch!r} is not a 1-D vector")
+        arr.append(v)
+    # Ensure all channels have same length
+    lens = {len(v) for v in arr}
+    if len(lens) != 1:
+        raise ValueError(f"Channels have mismatched lengths: {sorted(lens)}")
+    return np.vstack(arr)
+
+
+def estimate_sr_harmonics(
+    RECORDS,
+    sr_channel='EEG.F4',
+    fs=None,
+    f_can=(7.83, 14.3, 20.8, 27.3, 33.8),
+    search_halfband=0.8,
+    nperseg_sec=32.0,
+    overlap=0.5,
+    time_col="Timestamp",
+    comb="median",  # how to combine multi-channel PSD: 'median' | 'mean' | 'sum'
+):
+    """Estimate peaks near canonical Schumann harmonics using Welch PSD.
+
+    Now supports *single* channel name (str) or a *list/tuple* of channel names.
+    If multiple channels are provided, their PSDs are combined (robustly by
+    median by default) before peak-picking.
+
+    Parameters
+    ----------
+    RECORDS : DataFrame
+        Session records containing EEG channels.
+    sr_channel : str or sequence[str]
+        Channel name (e.g., 'EEG.F4') or a list/tuple of channel names.
+    fs : float, optional
+        Sampling rate. If None, inferred via project helper `_infer_fs`.
+    f_can : sequence[float]
+        Canonical target frequencies to refine around (Hz).
+    search_halfband : float
+        Half-width (Hz) of the local search window around each canonical f0.
+    nperseg_sec : float
+        Welch segment length in seconds.
+    overlap : float in [0,1)
+        Segment overlap fraction for Welch.
+    time_col : str
+        Timestamp column name used by `_infer_fs` if fs is None.
+    comb : {'median','mean','sum'}
+        Aggregator for multi-channel PSD combination.
+
+    Returns
+    -------
+    list[float]
+        Refined peak frequencies (Hz), one per f_can.
+    """
+    # Infer sampling rate
     if fs is None:
-        fs = _infer_fs(RECORDS,time_col)
-    x = _get_channel_vector(RECORDS, sr_channel)
-    nper = int(round(nperseg_sec*fs)); nover = int(round(overlap*nper))
-    f, Pxx = welch(x, fs=fs, nperseg=nper, noverlap=nover, window='hann', detrend='constant', scaling='density')
+        fs = _infer_fs(RECORDS, time_col)
+
+    # Build data array `x` (shape: (n_channels, n_samples))
+    ch_list = _as_list(sr_channel)
+    if ch_list is None:  # single channel
+        x = np.asarray(_get_channel_vector(RECORDS, sr_channel), dtype=float)
+        if x.ndim != 1:
+            raise ValueError("Expected a 1-D channel vector")
+        x = x[None, :]  # (1, n)
+    else:
+        if len(ch_list) == 0:
+            raise ValueError("sr_channel list is empty")
+        x = _get_channel_array(RECORDS, ch_list)  # (k, n)
+
+    # Welch parameters
+    nper = int(round(nperseg_sec * fs))
+    nper = max(8, min(nper, x.shape[-1]))  # guardrails
+    nover = int(round(overlap * nper))
+    nover = min(nover, nper - 1)
+
+    # Compute Welch PSD per channel, then combine across channels
+    # scipy.signal.welch supports multi-dimensional input when you specify axis
+    f, Pxx = welch(
+        x, fs=fs, nperseg=nper, noverlap=nover,
+        window='hann', detrend='constant', scaling='density', axis=-1
+    )
+    # Pxx shape: (n_channels, len(f))
+    if Pxx.ndim == 1:  # just in case scipy returns 1-D for a single channel
+        Pxx = Pxx[None, :]
+
+    if comb == 'median':
+        P = np.nanmedian(Pxx, axis=0)
+    elif comb == 'mean':
+        P = np.nanmean(Pxx, axis=0)
+    elif comb == 'sum':
+        P = np.nansum(Pxx, axis=0)
+    else:
+        raise ValueError("comb must be one of: 'median', 'mean', 'sum'")
+
+    # Local peak finder with parabolic (log-power) refinement
     def _peak_near(f0, half=0.8):
-        m = (f >= max(0.1, f0-half)) & (f <= (f0+half))
-        if not np.any(m): return f0
-        ff, pp = f[m], Pxx[m]
+        lo = max(0.1, f0 - half)
+        hi = f0 + half
+        m = (f >= lo) & (f <= hi)
+        if not np.any(m):
+            return float(f0)
+        ff = f[m]
+        pp = P[m]
         k = int(np.nanargmax(pp))
         # small parabolic refine in log power
-        if 0 < k < len(pp)-1 and pp[k-1]>0 and pp[k]>0 and pp[k+1]>0:
-            y1,y2,y3 = np.log(pp[k-1]), np.log(pp[k]), np.log(pp[k+1])
+        if 0 < k < (len(pp) - 1):
+            y1, y2, y3 = np.log(np.maximum(pp[k-1], 1e-30)), np.log(np.maximum(pp[k], 1e-30)), np.log(np.maximum(pp[k+1], 1e-30))
             denom = (y1 - 2*y2 + y3)
-            delta = 0.5*(y1 - y3)/denom if denom != 0 else 0.0
-            step = ff[1]-ff[0]
-            return float(np.clip(ff[k] + delta*step, ff[0], ff[-1]))
+            delta = 0.0 if denom == 0 else 0.5 * (y1 - y3) / denom
+            step = ff[1] - ff[0] if len(ff) > 1 else 0.0
+            f_ref = ff[k] + delta * step
+            return float(np.clip(f_ref, ff[0], ff[-1]))
         return float(ff[k])
+
     return [_peak_near(f0, half=search_halfband) for f0 in f_can]
+

@@ -367,9 +367,9 @@ def detect_ignitions_session(
 
     if verbose:
         print("\n=== Ignition Detection — Session Summary ===\n")
-        print(f"SR reference: {sr_channel}")
-        print("Estimated SR: ", np.round(valid_harmonics,2))
+        # print(f"SR reference: {sr_channel}")
         print(f"Ignition windows: {ignition_windows_rounded}")
+        print("Estimated SR: ", np.round(valid_harmonics,2))
         print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
         print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
         print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
@@ -579,47 +579,47 @@ def detect_ignitions_session(
     if show: plt.show();
     plt.close()
 
-    plt.figure(figsize=(11,3))
-    plt.plot(t_cent, zR, lw=1.0, label=f'zR(t) {R_band[0]}–{R_band[1]} Hz')
-    for (aa,bb) in ign: plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
-    plt.xlabel('Time (s)'); plt.ylabel('zR'); plt.title('Global synchrony R(t)')
-    plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'R_timeseries.png'), dpi=140)
-    if show: plt.show();
-    plt.close()
+    # plt.figure(figsize=(11,3))
+    # plt.plot(t_cent, zR, lw=1.0, label=f'zR(t) {R_band[0]}–{R_band[1]} Hz')
+    # for (aa,bb) in ign: plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
+    # plt.xlabel('Time (s)'); plt.ylabel('zR'); plt.title('Global synchrony R(t)')
+    # plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'R_timeseries.png'), dpi=140)
+    # if show: plt.show();
+    # plt.close()
 
-    if tau.size:
-        plt.figure(figsize=(7.5,3))
-        plt.plot(tau, eta_mean, lw=1.6, label='mean zR (aligned to t0_net)')
-        if np.any(np.isfinite(eta_sem)):
-            plt.fill_between(tau, eta_mean-eta_sem, eta_mean+eta_sem, alpha=0.2)
-        plt.axvline(0, color='k', lw=1)
-        plt.xlabel('Time from t0_net (s)'); plt.ylabel('zR'); plt.title('Event-triggered zR(t)')
-        plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'ETA_zR.png'), dpi=140)
-        if show: plt.show();
-        plt.close()
+    # if tau.size:
+    #     plt.figure(figsize=(7.5,3))
+    #     plt.plot(tau, eta_mean, lw=1.6, label='mean zR (aligned to t0_net)')
+    #     if np.any(np.isfinite(eta_sem)):
+    #         plt.fill_between(tau, eta_mean-eta_sem, eta_mean+eta_sem, alpha=0.2)
+    #     plt.axvline(0, color='k', lw=1)
+    #     plt.xlabel('Time from t0_net (s)'); plt.ylabel('zR'); plt.title('Event-triggered zR(t)')
+    #     plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'ETA_zR.png'), dpi=140)
+    #     if show: plt.show();
+    #     plt.close()
 
-    # MaxH_hz distribution across events (use sanitized overtone-only values)
-    if not events.empty and ('MaxH_overtone' in events.columns):
-        mh = pd.to_numeric(events['MaxH_overtone'], errors='coerce').to_numpy()
-        mh = mh[np.isfinite(mh)]
-        # remove any residual base-neighborhood values
-        if mh.size:
-            mh = mh[np.abs(mh - base_guess) > (base_margin + 1e-6)]
-        if mh.size and len(valid_harmonics_ot):
-            plt.figure(figsize=(7.5,3))
-            lo = float(min(valid_harmonics_ot))
-            hi = float(min(max(valid_harmonics_ot), fs/2.0-1e-3))
-            nb = max(8, min(30, len(valid_harmonics_ot)*3))
-            bins = np.linspace(lo, hi, nb)
-            plt.hist(mh, bins=bins, alpha=0.75, edgecolor='k')
-            for f0 in valid_harmonics_ot:
-                plt.axvline(f0, color='tab:orange', alpha=0.5, lw=1)
-            plt.xlabel('MaxH (overtone) frequency (Hz)')
-            plt.ylabel('Event count')
-            plt.title('MaxH_overtone distribution across events')
-            plt.tight_layout(); plt.savefig(os.path.join(out_dir,'MaxH_hz_distribution.png'), dpi=140)
-            if show: plt.show();
-            plt.close()
+    # # MaxH_hz distribution across events (use sanitized overtone-only values)
+    # if not events.empty and ('MaxH_overtone' in events.columns):
+    #     mh = pd.to_numeric(events['MaxH_overtone'], errors='coerce').to_numpy()
+    #     mh = mh[np.isfinite(mh)]
+    #     # remove any residual base-neighborhood values
+    #     if mh.size:
+    #         mh = mh[np.abs(mh - base_guess) > (base_margin + 1e-6)]
+    #     if mh.size and len(valid_harmonics_ot):
+    #         plt.figure(figsize=(7.5,3))
+    #         lo = float(min(valid_harmonics_ot))
+    #         hi = float(min(max(valid_harmonics_ot), fs/2.0-1e-3))
+    #         nb = max(8, min(30, len(valid_harmonics_ot)*3))
+    #         bins = np.linspace(lo, hi, nb)
+    #         plt.hist(mh, bins=bins, alpha=0.75, edgecolor='k')
+    #         for f0 in valid_harmonics_ot:
+    #             plt.axvline(f0, color='tab:orange', alpha=0.5, lw=1)
+    #         plt.xlabel('MaxH (overtone) frequency (Hz)')
+    #         plt.ylabel('Event count')
+    #         plt.title('MaxH_overtone distribution across events')
+    #         plt.tight_layout(); plt.savefig(os.path.join(out_dir,'MaxH_hz_distribution.png'), dpi=140)
+    #         if show: plt.show();
+    #         plt.close()
 
     # --- 7) summaries & files ---
     if events.empty:
@@ -627,10 +627,10 @@ def detect_ignitions_session(
     else:
         summary = {
             'n_events': int(len(events)),
-            'median_duration_s': float(events['duration_s'].median()),
-            'median_fs_z': float(events['fs_z'].median()),
-            'median_HSI': float(events['HSI'].median()),
-            'median_PEL_sec': float(events['PEL_sec'].median()),
+            'median_duration_s': float(events['duration_s'].mean()),
+            'median_fs_z': float(events['fs_z'].mean()),
+            'median_HSI': float(events['HSI'].mean()),
+            'median_PEL_sec': float(events['PEL_sec'].mean()),
             'coverage_pct': float(100.0*np.sum(events['duration_s'])/max(1e-9, t[-1]-t[0]))
         }
 
@@ -648,7 +648,7 @@ def detect_ignitions_session(
         # print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
         # print(f"Event SR mode: {sr_reference}")
         harm_src = 'custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'
-        print(f"PEL gamma band: {gamma_band[0]:.1f}–{gamma_band[1]:.1f} Hz; Harmonics (valid, {harm_src}): {np.round(valid_harmonics,3)}")
+        # print(f"PEL gamma band: {gamma_band[0]:.1f}–{gamma_band[1]:.1f} Hz; Harmonics (valid, {harm_src}): {np.round(valid_harmonics,3)}")
 
         def fmt_iqr(x: np.ndarray) -> str:
             x = np.asarray(x, float)
@@ -656,6 +656,8 @@ def detect_ignitions_session(
             if x.size == 0: return "n/a"
             q1, med, q3 = np.nanpercentile(x, [25, 50, 75])
             return f"{med:.2f} [{q1:.2f}, {q3:.2f}]"
+
+        
 
         n_events = int(len(events)) if not events.empty else 0
         print(f"\nEvents detected: {n_events}")
@@ -666,13 +668,9 @@ def detect_ignitions_session(
             msc_v  = events['msc_7p83_v'].to_numpy()  if 'msc_7p83_v'  in events.columns else np.array([])
             msc_pk = events['msc_7p83_v_peak'].to_numpy() if 'msc_7p83_v_peak' in events.columns else np.array([])
 
+
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
-            print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
-            print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
-            print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
-            print(f"  MSC@~7.83 (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
-            print(f"  MSC@~7.83 peak         — median [IQR]: {fmt_iqr(msc_pk)}")
-            print(f"  Coverage of recording  — {rec_cov:.2f}%")
+            
 
             # event-centric
             fsz  = events['fs_z'].to_numpy()
@@ -683,47 +681,40 @@ def detect_ignitions_session(
             seed_counts = events['seed_roi'].value_counts(dropna=True)
             type_counts = events['type_label'].value_counts(dropna=True)
 
-            print("\n— Event-centric metrics —")
-            print(f"  FS z (SR1)             — median [IQR]: {fmt_iqr(fsz)}")
+            score = srmax * msc_v / (1+HSIv)
+            events['score'] = score
+
+            print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
+            print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
+            print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
+            print(f"  MSC@~7.83 (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
-            print(f"  PEL Γ→θ lag (s)        — median [IQR]: {fmt_iqr(PELv)}")
-            print(f"  Seed ROI distribution  — ", ", ".join([f"{k}: {int(v)} ({100.0*v/n_events:.0f}%)" for k,v in seed_counts.items()]))
-            print(f"  Spread time (s)        — median [IQR]: {fmt_iqr(spread)}")
-            print(f"  Synchronized fraction  — median [IQR]: {fmt_iqr(SFv)}")
+            print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
+            # print(f"  MSC@~7.83 peak         — median [IQR]: {fmt_iqr(msc_pk)}")
+            print(f"  Coverage of recording  — {rec_cov:.2f}%")
+            # print("\n— Event-centric metrics —")
+            # print(f"  FS z (SR1)             — median [IQR]: {fmt_iqr(fsz)}")
+            
+            # # print(f"  PEL Γ→θ lag (s)        — median [IQR]: {fmt_iqr(PELv)}")
+            # print(f"  Seed ROI distribution  — ", ",".join([f"{k}: {int(v)} ({100.0*v/n_events:.0f}%)" for k,v in seed_counts.items()]))
+            # print(f"  Spread time (s)        — median [IQR]: {fmt_iqr(spread)}")
+            # print(f"  Synchronized fraction  — median [IQR]: {fmt_iqr(SFv)}")
+            
 
             # Top tables (SR z, FS z, HSI)
             try:
-                top_by_srz = events.sort_values('sr_z_max', ascending=False)
-                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v'] if c in events.columns]
-                print("\nTop events by SR z:")
+                top_by_srz = events.sort_values('score', ascending=False)
+                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v',
+                                        'HSI','fs_z','type_label','seed_roi','seed_ch','score'] if c in events.columns]
+                print("\nTop events by Score (sr_z_max * msc_7p83_v * HSI):")
                 print(top_by_srz[cols2].to_string(index=False, justify='center'))
-            except Exception:
-                pass
-            try:
-                top_by_srz = events.sort_values('msc_7p83_v', ascending=False)
-                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v'] if c in events.columns]
-                print("\nTop events by MSC:")
-                print(top_by_srz[cols2].to_string(index=False, justify='center'))
-            except Exception:
-                pass
-            try:
-                top_by_fsz = events.sort_values('fs_z', ascending=False)
-                cols2 = [c for c in ['t_start','t_end','duration_s','fs_z','HSI','MaxH','seed_ch','seed_roi'] if c in events.columns]
-                print("\nTop events by FS z (SR1):")
-                print(top_by_fsz[cols2].to_string(index=False, justify='center'))
-            except Exception:
-                pass
-            try:
-                top_by_hsi = events.sort_values('HSI', ascending=False)
-                cols3 = [c for c in ['t_start','t_end','duration_s','HSI','MaxH','fs_z','type_label'] if c in events.columns]
-                print("\nTop events by HSI (harmonics):")
-                print(top_by_hsi[cols3].to_string(index=False, justify='center'))
             except Exception:
                 pass
 
-        print(f"\nFiles written to: {out_dir}")
-        print("  - sr_env_z.png, R_timeseries.png, ETA_zR.png, MaxH_hz_distribution.png")
-        print("  - events.csv, summary.csv, event_passport.csv")
+            print("")
+        # print(f"\nFiles written to: {out_dir}")
+        # print("  - sr_env_z.png, R_timeseries.png, ETA_zR.png, MaxH_hz_distribution.png")
+        # print("  - events.csv, summary.csv, event_passport.csv")
 
     result = {
         'events': events,
@@ -1630,6 +1621,25 @@ def animate_delta_psd(
 #  * NEW: saves a static PNG of the **last frame** (full ignition window) for one-look overview
 # -----------------------------
 
+# -----------------------------------------------------------------------------
+# Optional presets helpful for notebook discoverability. The function below also
+# defines these internally if bands is None.
+BAND_PRESETS = {
+    'canonical': [
+        ('Delta', (0.5, 4.0)),
+        ('Theta', (4.0, 8.0)),
+        ('Alpha', (8.0, 12.0)),
+        ('BetaL', (12.0, 20.0)),
+        ('BetaH', (20.0, 35.0)),
+        ('Gamma', (35.0, 60.0)),
+    ],
+    'schumann': [
+        ('SR1', (7.45, 8.15)), ('2x', (13.0, 15.0)), ('3x', (19.0, 21.0)), ('4x', (25.0, 28.0)),
+        ('5x', (31.0, 35.0)), ('6x', (38.0, 42.0)), ('7x', (45.0, 48.0)), ('8x', (52.0, 54.0))
+    ],
+}
+
+
 def animate_psd_stacked(
     RECORDZ: pd.DataFrame,
     eeg_channels: Optional[List[str]] = None,
@@ -1667,21 +1677,37 @@ def animate_psd_stacked(
     import matplotlib.animation as animation
 
     # ---- 1) Extract & combine data
+    # Ensure we have a timestamp column (helper provided by caller's environment)
     time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
     fs = infer_fs(RECORDZ, time_col)
+
+    # Time vector
     t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+
+    # Channels
     if eeg_channels is None:
         eeg_channels = [c for c in RECORDZ.columns if c.startswith('EEG.')]
-    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
-    L = min(map(len, X)); X = X[:, :L]; t = t[:L]
+        if not eeg_channels:
+            raise ValueError("No EEG.* columns found. Provide `eeg_channels` explicitly.")
 
+    X = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+
+    # Guard shapes
+    L = min(map(len, X))
+    X = X[:, :L]
+    t = t[:L]
+
+    # Time range indices
     if t_range is None:
         t0, t1 = float(t[0]), float(t[-1])
     else:
         t0, t1 = t_range
-    i0 = max(0, int(round((t0 - t[0])*fs)))
-    i1 = min(L, int(round((t1 - t[0])*fs)))
+    i0 = max(0, int(round((t0 - t[0]) * fs)))
+    i1 = min(L, int(round((t1 - t[0]) * fs)))
+    if i1 - i0 <= 1:
+        raise ValueError("t_range yields empty slice. Adjust t_range or check timestamp units.")
 
+    # Combine signals
     if combine == 'mean':
         x = X[:, i0:i1].mean(axis=0)
     elif combine == 'median':
@@ -1689,6 +1715,7 @@ def animate_psd_stacked(
     else:
         x = get_series(RECORDZ, combine)[i0:i1] if combine in RECORDZ.columns else X[0, i0:i1]
 
+    x = np.asarray(x, dtype=float)
     if detrend:
         x = signal.detrend(x)
 
@@ -1712,18 +1739,23 @@ def animate_psd_stacked(
                 raise ValueError("When default_bands='custom', pass non-empty `bands`.")
 
     # ---- 3) Sliding-window PSD → absolute band powers
-    nwin = int(round(win_sec*fs)); nstep = int(round(step_sec*fs))
+    nwin = int(round(win_sec * fs))
+    nstep = int(round(step_sec * fs))
+    if nwin <= 1 or nstep < 1:
+        raise ValueError("win_sec/step_sec too small relative to fs.")
+
     frames_bp, t_mids = [], []
 
     for s in range(0, len(x) - nwin + 1, nstep):
-        seg = x[s:s+nwin]
+        seg = x[s:s + nwin]
+        # Welch PSD using full window as segment for smooth band integration
         f, Pxx = signal.welch(seg, fs=fs, nperseg=nwin)
         bp = []
         for _, (blo, bhi) in bands:
             mask = (f >= blo) & (f <= bhi)
             bp.append(float(np.trapz(Pxx[mask], f[mask])) if np.any(mask) else 0.0)
         frames_bp.append(bp)
-        t_mids.append(t0 + (s + nwin/2)/fs)
+        t_mids.append(t0 + (s + nwin / 2) / fs)
 
     if not frames_bp:
         raise ValueError('No frames to animate; adjust t_range/win_sec/step_sec.')
@@ -1736,22 +1768,22 @@ def animate_psd_stacked(
     ax.set_xlim(t_mids[0], t_mids[-1])
     total_power = BP.sum(axis=1)
     base_ylim = float(np.nanpercentile(total_power, 95))
-    ax.set_ylim(0, base_ylim*ylim_pad)
+    ax.set_ylim(0, max(base_ylim * ylim_pad, 1e-9))
 
     ttl = title or f"Stacked absolute power — {combine}"
     ax.set_title(ttl)
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Absolute band power (μV²)')
 
-    palette = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b',
-               '#e377c2','#7f7f7f','#bcbd22','#17becf']
+    palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b',
+               '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     colors = [palette[i % len(palette)] for i in range(len(labels))]
 
     stack_poly = [None]
 
     def _draw_frame(k):
-        x_t = np.asarray(t_mids[:k+1])
-        Y = BP[:k+1, :].T  # n_bands × (k+1)
+        x_t = np.asarray(t_mids[:k + 1])
+        Y = BP[:k + 1, :].T  # n_bands × (k+1)
         if dyn_ylim:
             ytop = float(np.nanmax(np.sum(Y, axis=0))) * ylim_pad
             if ytop > 0:
@@ -1767,7 +1799,7 @@ def animate_psd_stacked(
         ax.set_title(f"{ttl}\nWindow center: t = {t_mids[k]:.2f} s")
         return stack_poly[0]
 
-    anim = animation.FuncAnimation(fig, _draw_frame, frames=BP.shape[0], interval=1000/fps, blit=False)
+    anim = animation.FuncAnimation(fig, _draw_frame, frames=BP.shape[0], interval=1000 / fps, blit=False)
 
     # Legend with static proxies
     from matplotlib.patches import Patch
@@ -1779,9 +1811,9 @@ def animate_psd_stacked(
         ax.legend(handles=proxies, frameon=False, fontsize=8, ncol=min(3, len(labels)))
 
     # ---- 5) Save movie (MP4 if available, else GIF fallback)
-    ext = out_path.split('.')[-1].lower()
+    ext = out_path.split('.')[-1].lower() if '.' in out_path else 'mp4'
     try:
-        if ext in ('mp4','m4v','mov'):
+        if ext in ('mp4', 'm4v', 'mov'):
             writer = animation.FFMpegWriter(fps=fps, bitrate=2000)
             anim.save(out_path, writer=writer, dpi=140)
         elif ext in ('gif',):
@@ -1802,7 +1834,7 @@ def animate_psd_stacked(
     saved_last = None
     if save_last_frame:
         if last_frame_path is None:
-            base, ext = os.path.splitext(out_path)
+            base, _ext = os.path.splitext(out_path)
             last_frame_path = base + '_last.png'
         fig2, ax2 = plt.subplots(figsize=(9.0, 3.6))
         ax2.set_xlim(t_mids[0], t_mids[-1])
@@ -1829,13 +1861,215 @@ def animate_psd_stacked(
         return (anim, out_path, saved_last) if save_last_frame else (anim, out_path)
     return (out_path, saved_last) if save_last_frame else out_path
 
-# Example
-# anim, movie_path, last_png = animate_psd_stacked(
-#     RECORDZ, eeg_channels=['EEG.F4','EEG.FC6','EEG.P8'], combine='mean',
-#     t_range=(550, 600), default_bands='canonical', win_sec=10.0, step_sec=0.1,
-#     fps=24, out_path='psd_stacked_canonical.mp4', show_inline=True,
-#     title='Stacked absolute power — canonical bands, frontal-parietal mean',
-#     save_last_frame=True
-# )
-# from IPython.display import HTML
-# HTML(anim.to_jshtml()); print('Saved:', movie_path, ' | Last-frame PNG:', last_png)
+
+__all__ = [
+    'animate_psd_stacked', 'BAND_PRESETS'
+]
+
+
+# -----------------------------------------------------------------------------
+# Phase/Delay + WTC-ridge + Bicoherence helper
+# -----------------------------------------------------------------------------
+
+def _fit_group_delay(f: np.ndarray, phase: np.ndarray, fit_range=(1.0, 45.0)) -> Tuple[float, float, float]:
+    """Fit a line to unwrapped phase(f) over `fit_range` to estimate group delay.
+    Returns (tau_sec, slope, intercept) where phase ≈ slope * f + intercept.
+    Group delay τ = - slope / (2π).
+    """
+    f = np.asarray(f, float)
+    ph = np.unwrap(np.asarray(phase, float))
+    mask = (f >= fit_range[0]) & (f <= fit_range[1])
+    if not np.any(mask):
+        raise ValueError("fit_range excludes all frequency samples")
+    m, b = np.polyfit(f[mask], ph[mask], 1)
+    tau = -m / (2.0 * np.pi)
+    return float(tau), float(m), float(b)
+
+
+def plot_phase_delay_wtc_bico(
+    x: np.ndarray,
+    y: np.ndarray,
+    fs: float,
+    bands: Optional[List[Tuple[str, Tuple[float, float]]]] = None,
+    freq_fit: Tuple[float, float] = (1.0, 45.0),
+    detrend: bool = True,
+    stft_win_sec: float = 2.0,
+    stft_step_sec: float = 0.25,
+    max_coh_freq: float = 50.0,
+    bico_fmax: float = 40.0,
+    bico_bins: int = 36,
+    title: Optional[str] = None,
+):
+    """
+    Small diagnostic panel that:
+      1) overlays cross-spectral phase φ(f) with a fitted group-delay line;
+      2) prints per-band lag as % of cycle (using fitted τ);
+      3) renders a compact WTC-like ridge (STFT coherence ridge) + bicoherence heatmap for the same window.
+
+    Notes:
+    - The WTC panel uses an STFT-based magnitude-squared coherence proxy C(f,t) = |X*conj(Y)|^2 / (|X|^2 |Y|^2).
+      If `pycwt` is installed, you may swap in a true wavelet coherence implementation.
+    - The bicoherence panel computes a normalized third-order coupling on `x` only to reveal quadratic phase coupling.
+
+    Returns: (fig, axes_dict) with keys {'phase': ax0, 'coh': ax1, 'bico': ax2}.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    if detrend:
+        x = signal.detrend(x)
+        y = signal.detrend(y)
+
+    # -------------------- Cross-spectrum phase & group delay fit --------------------
+    nper = int(round(fs * 4.0))
+    nover = int(round(nper * 0.5))
+    f, Pxy = signal.csd(x, y, fs=fs, nperseg=nper, noverlap=nover)
+    phase = np.angle(Pxy)
+    tau, m, b = _fit_group_delay(f, phase, fit_range=freq_fit)
+
+    # Per-band lag as % cycle
+    if bands is None:
+        bands = BAND_PRESETS.get('canonical', [('Delta', (0.5, 4.0)), ('Theta', (4.0, 8.0)), ('Alpha', (8.0, 12.0))])
+
+    def _band_center(blo, bhi):
+        # geometric mean is less biased on log-frequency scales
+        return float(np.sqrt(blo * bhi)) if blo > 0 else (blo + bhi) / 2.0
+
+    band_rows = []
+    for lbl, (blo, bhi) in bands:
+        fc = _band_center(blo, bhi)
+        cyc = tau * fc
+        # wrap to [-0.5, 0.5) cycles for readability
+        cyc_wrapped = ((cyc + 0.5) % 1.0) - 0.5
+        pct = 100.0 * cyc_wrapped
+        band_rows.append((lbl, fc, tau, pct))
+
+    # -------------------- STFT coherence & ridge --------------------
+    nper_stft = int(round(stft_win_sec * fs))
+    nover_stft = nper_stft - int(round(stft_step_sec * fs))
+    nover_stft = max(0, min(nover_stft, nper_stft - 1))
+
+    f_stft, t_stft, Zx = signal.stft(x, fs=fs, nperseg=nper_stft, noverlap=nover_stft, boundary=None)
+    _, _, Zy = signal.stft(y, fs=fs, nperseg=nper_stft, noverlap=nover_stft, boundary=None)
+
+    eps = 1e-12
+    C = (np.abs(Zx * np.conj(Zy)) ** 2) / (np.maximum(np.abs(Zx) ** 2 * np.abs(Zy) ** 2, eps))
+    fmask = f_stft <= max_coh_freq
+    C = C[fmask, :]
+    f_coh = f_stft[fmask]
+
+    ridge_idx = np.argmax(C, axis=0)
+    ridge_freq = f_coh[ridge_idx]
+
+    # -------------------- Bicoherence (on x) --------------------
+    # Downselect frequencies up to bico_fmax and to ~bico_bins points
+    fmask_b = f_stft <= bico_fmax
+    Zx_b = Zx[fmask_b, :]
+    f_b = f_stft[fmask_b]
+    if len(f_b) == 0:
+        raise ValueError("No STFT frequency bins under bico_fmax.")
+    step = max(1, len(f_b) // bico_bins)
+    Zb = Zx_b[::step, :]
+    fb = f_b[::step]
+
+    Nb, T = Zb.shape
+    B = np.zeros((Nb, Nb), dtype=float)
+
+    # Simple normalized bicoherence estimator
+    for i in range(Nb):
+        Zi = Zb[i, :]
+        for j in range(Nb - i):  # ensure i+j within range
+            k = i + j
+            Zij = Zi * Zb[j, :]
+            Zk = Zb[k, :]
+            num = np.sum(Zij * np.conj(Zk))
+            den = np.sqrt(np.sum(np.abs(Zij) ** 2) * np.sum(np.abs(Zk) ** 2)) + eps
+            B[i, j] = np.abs(num) / den
+        # optional: mask upper triangle beyond Nyquist sum region
+        for j in range(Nb - i, Nb):
+            B[i, j] = np.nan
+
+    # -------------------- Plot layout --------------------
+    fig = plt.figure(figsize=(12, 3.8))
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.3, 1.2], wspace=0.32)
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax1 = fig.add_subplot(gs[0, 1])
+    ax2 = fig.add_subplot(gs[0, 2])
+
+    if title:
+        fig.suptitle(title, y=1.02, fontsize=11)
+
+    # (0) Phase & fit
+    ax0.plot(f, np.unwrap(phase), lw=1.2, label='phase(f)')
+    ax0.plot(f, m * f + b, lw=1.2, linestyle='--', label=f'fit → τ={tau*1e3:.1f} ms')
+    ax0.set_xlim(freq_fit[0], max(freq_fit[1], min(max(f), freq_fit[1])))
+    ax0.set_xlabel('Frequency (Hz)')
+    ax0.set_ylabel('Phase (rad)')
+    ax0.legend(frameon=False, fontsize=8)
+
+    # Band lag text box (% of cycle)
+    lines = ["Band  fc(Hz)  τ(ms)  lag% (wrapped)"]
+    for lbl, fc, tau_s, pct in band_rows:
+        lines.append(f"{lbl:>6}  {fc:5.2f}  {tau_s*1e3:6.1f}  {pct:7.1f}")
+    txt = "".join(lines)
+    ax0.text(0.98, 0.05, txt, transform=ax0.transAxes, ha='right', va='bottom', fontsize=8,
+             family='monospace', bbox=dict(boxstyle='round,pad=0.25', facecolor='white', alpha=0.8, lw=0.0))
+
+    # (1) WTC-like coherence map + ridge
+    pcm = ax1.pcolormesh(t_stft, f_coh, C, shading='auto')
+    ax1.plot(t_stft, ridge_freq, lw=1.2, color='k', alpha=0.9, label='ridge')
+    ax1.set_ylim(0, max_coh_freq)
+    ax1.set_xlabel('Time (s)')
+    ax1.set_ylabel('Freq (Hz)')
+    ax1.set_title('STFT coherence (proxy) + ridge')
+    cb = fig.colorbar(pcm, ax=ax1, pad=0.02)
+    cb.ax.set_ylabel('C(f,t)')
+
+    # (2) Bicoherence heatmap
+    im = ax2.imshow(B, origin='lower', aspect='auto', extent=[fb[0], fb[-1], fb[0], fb[-1]])
+    ax2.set_xlabel('f₁ (Hz)')
+    ax2.set_ylabel('f₂ (Hz)')
+    ax2.set_title('Bicoherence |⟨X(f1)X(f2)X*(f1+f2)⟩|')
+    cb2 = fig.colorbar(im, ax=ax2, pad=0.02)
+    cb2.ax.set_ylabel('bicoherence')
+
+    fig.tight_layout()
+    return fig, {'phase': ax0, 'coh': ax1, 'bico': ax2}
+
+
+def phase_wtc_bico_from_df(
+    RECORDZ: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    time_col: str = 'Timestamp',
+    t_range: Optional[Tuple[float, float]] = None,
+    bands: Optional[List[Tuple[str, Tuple[float, float]]]] = None,
+    **kwargs,
+):
+    """
+    Convenience wrapper: slice a time window from RECORDZ and call `plot_phase_delay_wtc_bico`.
+    Requires helper utilities: ensure_timestamp_column, infer_fs, get_series.
+    """
+    time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
+    fs = infer_fs(RECORDZ, time_col)
+    t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    x_full = get_series(RECORDZ, x_col)
+    y_full = get_series(RECORDZ, y_col)
+
+    if t_range is None:
+        i0, i1 = 0, len(t)
+    else:
+        t0, t1 = t_range
+        i0 = max(0, int(round((t0 - t[0]) * fs)))
+        i1 = min(len(t), int(round((t1 - t[0]) * fs)))
+        if i1 - i0 <= 1:
+            raise ValueError("t_range yields empty slice. Adjust t_range or check timestamp units.")
+
+    x = np.asarray(x_full[i0:i1], float)
+    y = np.asarray(y_full[i0:i1], float)
+    return plot_phase_delay_wtc_bico(x, y, fs=fs, bands=bands, title=f"{x_col} vs {y_col}", **kwargs)
+
+
+__all__ += [
+    'plot_phase_delay_wtc_bico',
+    'phase_wtc_bico_from_df',
+]
