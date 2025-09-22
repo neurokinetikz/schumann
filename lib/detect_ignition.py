@@ -570,7 +570,7 @@ def detect_ignitions_session(
         tau = np.array([]); eta_mean = np.array([]); eta_sem = np.array([])
 
     # --- 6) Plots ---
-    plt.figure(figsize=(11,3))
+    plt.figure(figsize=(12.5,3))
     plt.plot(t[:len(z)], z, lw=1.0, label='SR env z (ref)')
     plt.axhline(z_thresh, color='k', ls='--', lw=1, label='z-thresh')
     for (aa,bb) in ign: plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
