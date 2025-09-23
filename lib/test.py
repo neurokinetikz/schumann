@@ -1264,29 +1264,29 @@ def _detect_ignition_phases(
         i3 = _first_onset(m3, t, 0.0)
 
     # ---------------- debug prints ----------------
-    if getattr(params, 'debug', False):
-        def _fmt(x): return 'None' if x is None else f"{x:.3f}"
-        g_z   = ((zf_z >= z_p1_eff) & p1_mask).mean()
-        g_plv = ((plv_s >= plv_p1_eff) & p1_mask).mean()
-        rz_b  = (_rising_over_tau(zf_z, t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03)) & p1_mask).mean()
-        rpl_b = (_rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008)) & p1_mask).mean()
-        print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)}) | z_p0={z_p0:.2f} z_p1={z_p1_eff:.2f}")
-        print(f"[ignite] P1 pass-rates  z>=z_p1:{g_z:.2f}  plv>=plv_p1:{g_plv:.2f}  rising_z:{rz_b:.2f}  rising_plv:{rpl_b:.2f}  band:{p1_mask.mean():.2f}")
-        # longest contiguous run in core
-        run = 0.0
-        if 'core' in locals() and core.any():
-            dt = float(np.median(np.diff(t)))
-            cnt, best = 0, 0
-            for v in core:
-                if v: cnt += 1; best = max(best, cnt)
-                else: cnt = 0
-            run = best * dt
-        P0t = None if i0 is None else float(t[i0])
-        P1t = None if i1 is None else float(t[i1])
-        P2t = None if i2 is None else float(t[i2])
-        P3t = None if i3 is None else float(t[i3])
-        print(f"[ignite] longest core run in band ≈ {run:.3f}s  (need ≥ {max(getattr(params,'min_p1_dur',0.12), float(np.median(np.diff(t)))):.3f}s)")
-        print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
+    # if getattr(params, 'debug', False):
+    #     def _fmt(x): return 'None' if x is None else f"{x:.3f}"
+    #     g_z   = ((zf_z >= z_p1_eff) & p1_mask).mean()
+    #     g_plv = ((plv_s >= plv_p1_eff) & p1_mask).mean()
+    #     rz_b  = (_rising_over_tau(zf_z, t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03)) & p1_mask).mean()
+    #     rpl_b = (_rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008)) & p1_mask).mean()
+    #     print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)}) | z_p0={z_p0:.2f} z_p1={z_p1_eff:.2f}")
+    #     print(f"[ignite] P1 pass-rates  z>=z_p1:{g_z:.2f}  plv>=plv_p1:{g_plv:.2f}  rising_z:{rz_b:.2f}  rising_plv:{rpl_b:.2f}  band:{p1_mask.mean():.2f}")
+    #     # longest contiguous run in core
+    #     run = 0.0
+    #     if 'core' in locals() and core.any():
+    #         dt = float(np.median(np.diff(t)))
+    #         cnt, best = 0, 0
+    #         for v in core:
+    #             if v: cnt += 1; best = max(best, cnt)
+    #             else: cnt = 0
+    #         run = best * dt
+    #     P0t = None if i0 is None else float(t[i0])
+    #     P1t = None if i1 is None else float(t[i1])
+    #     P2t = None if i2 is None else float(t[i2])
+    #     P3t = None if i3 is None else float(t[i3])
+    #     print(f"[ignite] longest core run in band ≈ {run:.3f}s  (need ≥ {max(getattr(params,'min_p1_dur',0.12), float(np.median(np.diff(t)))):.3f}s)")
+    #     print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
 
     def _pack(idx: Optional[int]) -> dict:
         return {'idx': None if idx is None else int(idx), 'time': None if idx is None else float(t[idx])}
