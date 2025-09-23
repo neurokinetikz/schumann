@@ -418,352 +418,6 @@ def _clip_seed_to_window(seed_t: float | None, t0: float, t1: float, default_cen
         return 0.5 * (t0 + t1)
     return float(np.clip(seed_t if seed_t is not None else 0.5*(t0+t1), t0, t1))
 
-# def detect_ignition_phases(
-#     t: np.ndarray,
-#     z_fund: np.ndarray,
-#     plv_fund: np.ndarray,
-#     hsi_t: np.ndarray,
-#     z_h2: np.ndarray,
-#     z_h3: np.ndarray,
-#     *,
-#     beta_t: np.ndarray | None = None,
-#     ridge_is_fund: np.ndarray | None = None,
-#     bic_7_7_15: np.ndarray | None = None,
-#     bic_7_15_23: np.ndarray | None = None,
-#     pac_mvl: np.ndarray | None = None,
-#     params=None,
-#     # NEW: seeding and band constraints
-#     seed_t: float | str | None = "center",     # float time, "center", or None
-#     p0_band=(-2.5, +1.5),                      # seconds relative to seed_t
-#     p1_band=(-1.5, +1.0),                      # seconds relative to seed_t
-#     pad_s: float = 2.0,                        # ignore this much at window edges
-# ):
-#     """
-#     Adds:
-#       • P0 search limited to [seed_t-2.5s, seed_t+1.5s]
-#       • P1 search limited to [seed_t-1.5s, seed_t+1.0s]
-#       • P1 requires rising z_fund *and* rising PLV (dz/dt>0 and dPLV/dt>0)
-#       • seed_t can be set explicitly (e.g., SR peak), auto-clipped to the window
-#     """
-#     # --- arrays
-#     t = np.asarray(t, float)
-#     zf = np.asarray(z_fund, float)
-#     plv = np.asarray(plv_fund, float)
-#     hsi = np.asarray(hsi_t, float)
-#     z2 = np.asarray(z_h2, float)
-#     z3 = np.asarray(z_h3, float)
-
-#     # # --- derivatives for rising checks
-#     # dz = np.gradient(zf, t, edge_order=1)
-#     # dplv = np.gradient(plv, t, edge_order=1)
-
-#     # # --- RT/ridge/beta gates (as before)
-#     # ridge_ok = np.ones_like(zf, bool) if ridge_is_fund is None else np.asarray(ridge_is_fund, bool)
-#     # beta_ok  = np.ones_like(zf, bool)
-#     # if (beta_t is not None) and (getattr(params, "beta_flat", None) is not None):
-#     #     beta_ok = (np.asarray(beta_t, float) <= params.beta_flat)
-
-#     # --- preprocessing for derivatives in detect_ignition_phases ---
-#     zf_s  = smooth_sec(t, z_fund, 0.20)   # 200 ms smoothing
-#     plv_s = smooth_sec(t, plv_fund, 0.20)
-
-#     # finite-difference over τ seconds for robust “rising” check
-#     τ = 0.4
-#     def rise(y):
-#         dt = np.median(np.diff(t)); k = max(1, int(round(τ/dt)))
-#         return (y - np.r_[y[:k], y[:-k]]) > params.rise_eps  # e.g., 0.05–0.10 z/PLV units
-
-#     rz  = rise(zf_s)
-#     rpv = rise(plv_s)
-
-
-#     # --- seed time and bands
-#    if seed_t in (None, 'center'):
-#     seed_val = t[np.nanargmax(zf_s)]
-#     # bands
-#     p0_band_mask = _band_mask(t, seed_val + p0_band[0], seed_val + p0_band[1]) & (t>=t[0]+pad_s) & (t<=t[-1]-pad_s)
-#     p1_band_mask = _band_mask(t, seed_val + p1_band[0], seed_val + p1_band[1]) & (t>=t[0]+pad_s) & (t<=t[-1]-pad_s)
-
-#     # --- thresholds
-#     z_p0  = params.z_p0
-#     plv_p0 = params.plv_p0
-#     z_p1  = params.z_p1
-#     plv_p1 = params.plv_p1
-#     hsi_broad  = params.hsi_broad
-#     hsi_tight  = params.hsi_tight
-#     rel_h2 = (z2 / (np.abs(zf) + 1e-9)) >= params.rel_h2
-#     rel_h3 = (z3 / (np.abs(zf) + 1e-9)) >= params.rel_h3
-#     bic_a = np.ones_like(zf, bool) if bic_7_7_15 is None else (np.asarray(bic_7_7_15, float) >= params.bic_7_7_15)
-#     bic_b = np.ones_like(zf, bool) if bic_7_15_23 is None else (np.asarray(bic_7_15_23, float) >= params.bic_7_15_23)
-#     pac_ok = np.ones_like(zf, bool)
-#     if (pac_mvl is not None) and (getattr(params, "pac_mvl", None) is not None):
-#         pac_ok = (np.asarray(pac_mvl, float) >= params.pac_mvl)
-
-#     # --- P0 (Prelude) in the restricted band
-#     m0 = (zf_s >= params.z_p0) & (plv_s >= params.plv_p0) & (hsi_t > params.hsi_broad) & p0_band_mask
-#     i0 = _first_onset(m0, t, params.min_p0_dur)
-
-#     # --- P1 (Lock-on): rising z AND rising PLV, within tighter band
-#     m1 = (zf_s >= params.z_p1) & (plv_s >= params.plv_p1) & rz & rpv & p1_band_mask
-#     if i0 is not None: m1[:i0] = False
-#     i1 = _first_onset(m1, t, params.min_p1_dur)
-
-#     # Auto-expand bands if not found
-#     if i1 is None:
-#         exp = 1.0
-#         p1b = _band_mask(t, seed_val + p1_band[0]-exp, seed_val + p1_band[1]+exp)
-#         m1_alt = (zf_s >= params.z_p1) & (plv_s >= params.plv_p1) & rz & rpv & p1b
-#         if i0 is not None: m1_alt[:i0] = False
-#         i1 = _first_onset(m1_alt, t, params.min_p1_dur)
-
-#     # --- P2 (Cascade): same as before, but allow anywhere inside [t0,t1] (already padded)
-#     rel_h2 = (z_h2 / (np.abs(z_fund) + 1e-9)) >= params.rel_h2
-#     rel_h3 = (z_h3 / (np.abs(z_fund) + 1e-9)) >= params.rel_h3
-#     m2 = (hsi_t <= params.hsi_tight) & (rel_h2 | rel_h3)
-#     if bic_7_7_15 is not None: m2 &= (bic_7_7_15 >= params.bic_7_7_15)
-#     if bic_7_15_23 is not None: m2 &= (bic_7_15_23 >= params.bic_7_15_23)
-#     if pac_mvl is not None and getattr(params,'pac_mvl',None) is not None:
-#         m2 &= (pac_mvl >= params.pac_mvl)
-#     if i1 is not None: m2[:i1] = False
-#     # require min cycles at f0
-#     m2_dur = params.min_p2_cycles / max(params.f0, 1e-6)
-#     i2 = _first_onset(m2, t, m2_dur)
-
-#     # --- P3 (Afterglow): release + harmonics dropping faster than fundamental
-#     cond_release = (plv < params.plv_release) | (hsi > params.hsi_release)
-#     dz  = np.gradient(zf_s, t, edge_order=1)
-#     dz2 = np.gradient(smooth_sec(t, z_h2, 0.20), t, edge_order=1)
-#     dz3 = np.gradient(smooth_sec(t, z_h3, 0.20), t, edge_order=1)
-#     cond_release = (plv_s < params.plv_release) | (hsi_t > params.hsi_release)
-#     faster = (dz2 < dz) & (dz2 < 0) & (dz3 < dz) & (dz3 < 0)
-#     # k-consecutive frames
-#     k = max(1, params.rel_drop_k)
-#     if k>1:
-#         fast_k = faster.copy()
-#         for j in range(1,k): fast_k[:-j] &= faster[j:]
-#         faster = fast_k
-#     m3 = cond_release & faster
-#     if i2 is not None:
-#         m3[:i2] = False
-#         m3 &= (t >= t[i2] + 0.5)   # refractory
-#     i3 = _first_onset(m3, t, 0.0)
-
-#     def _pack(idx):
-#         return {'idx': None if idx is None else int(idx),
-#                 'time': None if idx is None else float(t[idx])}
-
-#     return {
-#         'P0': _pack(i0), 'P1': _pack(i1), 'P2': _pack(i2), 'P3': _pack(i3),
-#         'params': asdict(params) if params is not None else {},
-#         'seed_t': float(seed_val),
-#         'bands': {'P0': (float(max(t0, p0_lo)), float(min(t1, p0_hi))),
-#                   'P1': (float(max(t0, p1_lo)), float(min(t1, p1_hi)))}
-#     }
-
-
-from dataclasses import asdict
-import numpy as np
-
-# You must provide these helpers from your codebase:
-# - smooth_sec(t, y, sec)
-# - _band_mask(t, lo, hi)
-# - _first_onset(mask: np.ndarray, t: np.ndarray, min_dur_sec: float) -> int|None
-# - params: object with fields: z_p0, plv_p0, z_p1, plv_p1, hsi_broad, hsi_tight,
-#           hsi_release, plv_release, rel_h2, rel_h3, bic_7_7_15, bic_7_15_23,
-#           pac_mvl (optional), min_p0_dur, min_p1_dur, min_p2_cycles,
-#           f0, rel_drop_k, rise_eps, beta_flat (optional)
-
-
-# def detect_ignition_phases(
-#     t: np.ndarray,
-#     z_fund: np.ndarray,
-#     plv_fund: np.ndarray,
-#     hsi_t: np.ndarray,
-#     z_h2: np.ndarray,
-#     z_h3: np.ndarray,
-#     *,
-#     beta_t: np.ndarray | None = None,
-#     ridge_is_fund: np.ndarray | None = None,
-#     bic_7_7_15: np.ndarray | None = None,
-#     bic_7_15_23: np.ndarray | None = None,
-#     pac_mvl: np.ndarray | None = None,
-#     params=None,
-#     # seeding and band constraints
-#     seed_t: float | str | None = "center",
-#     p0_band=(-2.5, +1.5),
-#     p1_band=(-1.5, +1.0),
-#     pad_s: float = 2.0,
-# ):
-#     """
-#     Robust ignition phase detector.
-#     - Uses smoothed finite-difference "rising" checks over tau seconds (less jittery than frame gradients)
-#     - Smarter seed: defaults to time of max(z_fund) if seed_t is None/"center"
-#     - Band-retry: expands P1 band by ±1 s if not found on first pass
-#     - P2 allows either 2× or 3× to be relatively strong
-#     - P3 bug fixed; adds 0.5 s refractory after P2
-#     Returns dict with P0..P3 idx/time, params snapshot, seed and effective bands.
-#     """
-#     # --- arrays ---
-#     t   = np.asarray(t, float)
-#     zf  = np.asarray(z_fund, float)
-#     plv = np.asarray(plv_fund, float)
-#     hsi = np.asarray(hsi_t, float)
-#     z2  = np.asarray(z_h2, float)
-#     z3  = np.asarray(z_h3, float)
-
-#     # --- guards ---
-#     assert t.ndim == 1 and t.size == zf.size == plv.size == hsi.size == z2.size == z3.size, "length mismatch"
-#     assert params is not None, "params required"
-
-#     # --- preprocess: light smoothing for stability ---
-#     zf_s  = smooth_sec(t, zf, 0.20)   # 200 ms
-#     plv_s = smooth_sec(t, plv, 0.20)
-
-#     # (optional) ridge/beta gates
-#     ridge_ok = np.ones_like(zf, bool) if ridge_is_fund is None else np.asarray(ridge_is_fund, bool)
-#     beta_ok  = np.ones_like(zf, bool)
-#     if (beta_t is not None) and (getattr(params, "beta_flat", None) is not None):
-#         beta_ok = (np.asarray(beta_t, float) <= params.beta_flat)
-
-#     # --- robust "rising" predicate over tau ---
-#     tau = 0.4
-#     def rising(y):
-#         dt = float(np.median(np.diff(t)))
-#         k  = max(1, int(round(tau / max(dt, 1e-6))))
-#         y0 = np.asarray(y, float)
-#         y_prev = np.r_[y0[:k], y0[:-k]]
-#         return (y0 - y_prev) > getattr(params, 'rise_eps', 0.05)
-
-#     rz  = rising(zf_s)
-#     rpl = rising(plv_s)
-
-#     # --- seed and bands ---
-#     t_lo, t_hi = float(t[0] + pad_s), float(t[-1] - pad_s)
-#     if (seed_t is None) or (isinstance(seed_t, str) and seed_t.lower() == 'center'):
-#         # use the z_fund peak as default seed (more reliable than window center)
-#         seed_val = float(t[np.nanargmax(zf_s)])
-#     else:
-#         seed_val = float(np.clip(seed_t, t_lo, t_hi))
-
-#     p0_lo, p0_hi = seed_val + p0_band[0], seed_val + p0_band[1]
-#     p1_lo, p1_hi = seed_val + p1_band[0], seed_val + p1_band[1]
-
-#     # clip to pad
-#     p0_lo, p0_hi = max(t_lo, p0_lo), min(t_hi, p0_hi)
-#     p1_lo, p1_hi = max(t_lo, p1_lo), min(t_hi, p1_hi)
-
-#     p0_mask = _band_mask(t, p0_lo, p0_hi)
-#     p1_mask = _band_mask(t, p1_lo, p1_hi)
-
-#     # --- thresholds (snapshot) ---
-#     z_p0, plv_p0 = params.z_p0, params.plv_p0
-#     z_p1, plv_p1 = params.z_p1, params.plv_p1
-#     hsi_broad, hsi_tight = params.hsi_broad, params.hsi_tight
-
-#     # relative harmonic gates
-#     rel2 = (z2 / (np.abs(zf) + 1e-9)) >= params.rel_h2
-#     rel3 = (z3 / (np.abs(zf) + 1e-9)) >= params.rel_h3
-
-#     # cross-metric gates
-#     bicA = np.ones_like(zf, bool) if bic_7_7_15  is None else (np.asarray(bic_7_7_15, float)  >= params.bic_7_7_15)
-#     bicB = np.ones_like(zf, bool) if bic_7_15_23 is None else (np.asarray(bic_7_15_23, float) >= params.bic_7_15_23)
-#     pacK = np.ones_like(zf, bool)
-#     if (pac_mvl is not None) and (getattr(params, 'pac_mvl', None) is not None):
-#         pacK = (np.asarray(pac_mvl, float) >= params.pac_mvl)
-
-#     # ---------------- P0 ----------------
-#     m0 = (zf_s >= z_p0) & (plv_s >= plv_p0) & (hsi > hsi_broad) & p0_mask
-#     i0 = _first_onset(m0, t, params.min_p0_dur)
-
-#     # ---------------- P1 ----------------
-#     m1 = (zf_s >= z_p1) & (plv_s >= plv_p1) & ridge_ok & beta_ok & rz & rpl & p1_mask
-#     if i0 is not None:
-#         m1[:i0] = False
-#     i1 = _first_onset(m1, t, params.min_p1_dur)
-
-#     # retry with widened band if not found
-#     if i1 is None:
-#         exp = 1.0
-#         p1b = _band_mask(t, max(t_lo, p1_lo-exp), min(t_hi, p1_hi+exp))
-#         m1b = (zf_s >= z_p1) & (plv_s >= plv_p1) & ridge_ok & beta_ok & rz & rpl & p1b
-#         if i0 is not None:
-#             m1b[:i0] = False
-#         i1 = _first_onset(m1b, t, params.min_p1_dur)
-
-#     # ---------------- P2 ----------------
-#     m2 = (hsi <= hsi_tight) & (rel2 | rel3) & bicA & bicB & pacK
-#     if i1 is not None:
-#         m2[:i1] = False
-#     dur2 = params.min_p2_cycles / max(params.f0, 1e-6)
-#     i2 = _first_onset(m2, t, dur2)
-
-#     # ---------------- P3 ----------------
-#     dz  = np.gradient(zf_s, t, edge_order=1)
-#     dz2 = np.gradient(smooth_sec(t, z2, 0.20), t, edge_order=1)
-#     dz3 = np.gradient(smooth_sec(t, z3, 0.20), t, edge_order=1)
-#     release = (plv_s < params.plv_release) | (hsi > params.hsi_release)
-#     faster  = (dz2 < dz) & (dz2 < 0) & (dz3 < dz) & (dz3 < 0)
-#     k = max(1, params.rel_drop_k)
-#     if k > 1:
-#         fk = faster.copy()
-#         for j in range(1, k):
-#             fk[:-j] &= faster[j:]
-#         faster = fk
-#     m3 = release & faster
-#     if i2 is not None:
-#         m3[:i2] = False
-#         m3 &= (t >= (t[i2] + 0.5))  # refractory
-#     i3 = _first_onset(m3, t, 0.0)
-
-#     def _pack(idx):
-#         return {
-#             'idx': None if idx is None else int(idx),
-#             'time': None if idx is None else float(t[idx])
-#         }
-
-#     out = {
-#         'P0': _pack(i0), 'P1': _pack(i1), 'P2': _pack(i2), 'P3': _pack(i3),
-#         'params': asdict(params) if params is not None else {},
-#         'seed_t': float(seed_val),
-#         'bands': {'P0': (float(p0_lo), float(p0_hi)), 'P1': (float(p1_lo), float(p1_hi))}
-#     }
-#         # ---- quick validator prints (optional) ----
-#     if getattr(params, 'debug', False):
-#         def _fmt(x):
-#             return 'None' if x is None else f"{x:.3f}"
-#         P0t = out['P0']['time']; P1t = out['P1']['time']; P2t = out['P2']['time']; P3t = out['P3']['time']
-#         print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)})")
-#         print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
-#         qz = np.nanpercentile(zf_s, [1,50,99]); qp = np.nanpercentile(plv_s, [1,50,99])
-#         print(f"[ignite] z7 pct: {qz} | plv pct: {qp}")
-#     return out
-
-
-# # --- small helper: robust-z in the current window ---
-# def _robust_z(y: np.ndarray) -> np.ndarray:
-#     y = np.asarray(y, float)
-#     med = np.nanmedian(y)
-#     mad = 1.4826 * np.nanmedian(np.abs(y - med)) + 1e-12
-#     return (y - med) / mad
-
-
-# def _robust_z(y: np.ndarray) -> np.ndarray:
-#     y = np.asarray(y, float)
-#     # light winsorization to avoid a single spike exploding the scale
-#     q1, q99 = np.nanpercentile(y, (1, 99))
-#     y = np.clip(y, q1, q99)
-
-#     med = np.nanmedian(y)
-#     mad = np.nanmedian(np.abs(y - med)) * 1.4826
-#     iqr = (np.nanpercentile(y, 75) - np.nanpercentile(y, 25)) / 1.349
-#     sigma = float(max(mad, iqr, 1e-6))   # guard against near‑zero scale
-#     return (y - med) / sigma
-
-
-from dataclasses import asdict
-import numpy as np
-
-# ---- safer robust-z: light winsorize + MAD∨IQR scale ----
 def _robust_z(y: np.ndarray) -> np.ndarray:
     y = np.asarray(y, float)
     # clip extreme 1% to avoid a single spike exploding z
@@ -774,36 +428,6 @@ def _robust_z(y: np.ndarray) -> np.ndarray:
     iqr = (np.nanpercentile(y, 75) - np.nanpercentile(y, 25)) / 1.349
     sigma = float(max(mad, iqr, 1e-6))
     return (y - med) / sigma
-
-
-"""Schumann Ignition Detector — Adaptive Two‑Stage v3
-
-Drop‑in function:
-    detect_ignition_phases(t, z_fund, plv_fund, hsi_t, z_h2, z_h3, *, ...)
-
-Key features
-------------
-- Band‑adaptive **P1** thresholds (computed inside the P1 band you test).
-- Two‑stage P1 (z‑led proto → PLV‑level within ±150 ms) + 1‑sample gap bridging.
-- **P2** defined by ΔHSI tightening (smooth(hsi,0.45s) − median) + (2× OR 3×) support;
-  optional bico/PAC gates are respected if provided.
-- **P3** only after P2, with a 0.5 s refractory and faster overtone drop than 1×.
-- Verbose debug prints (effective gates, pass‑rates in band, longest core run, calls).
-
-Required helpers from your codebase:
-- smooth_sec(t, y, sec)
-- _band_mask(t, lo, hi)
-- _first_onset(mask, t, min_dur_sec) -> Optional[int]
-
-Recommended params defaults for these data:
-    params.z_p1_cap = 1.9
-    params.min_p1_dur = 0.12
-    params.require_plv_rise = False
-"""
-
-__all__ = ["detect_ignition_phases"]
-
-# ---------------- internal utilities ----------------
 
 def _winsor_robust_z(y: np.ndarray, p_lo: float = 1.0, p_hi: float = 99.0) -> np.ndarray:
     """Winsorized robust‑z (MAD∨IQR) to avoid explosive scales in quiet windows."""
@@ -818,14 +442,12 @@ def _winsor_robust_z(y: np.ndarray, p_lo: float = 1.0, p_hi: float = 99.0) -> np
     sigma = float(max(mad, iqr, 1e-6))
     return (y - med) / sigma
 
-
 def _rising_over_tau(y: np.ndarray, t: np.ndarray, tau_s: float, eps: float) -> np.ndarray:
     dt = float(np.median(np.diff(t)))
     k  = max(1, int(round(tau_s / max(dt, 1e-6))))
     y0 = np.asarray(y, float)
     y_prev = np.r_[y0[:k], y0[:-k]]
     return (y0 - y_prev) > eps
-
 
 def _bridge(mask: np.ndarray, t: np.ndarray, bridge_sec: float = 0.02) -> np.ndarray:
     """Bridge short False gaps (morphological closing) to avoid micro‑breaks."""
@@ -846,218 +468,6 @@ def _bridge(mask: np.ndarray, t: np.ndarray, bridge_sec: float = 0.02) -> np.nda
         box = np.convolve(dil.astype(int), np.ones(win, int), 'same')
         er &= (box >= win)
     return er
-
-# ---------------- main detector ----------------
-
-def _detect_ignition_phases(
-    t: np.ndarray,
-    z_fund: np.ndarray,
-    plv_fund: np.ndarray,
-    hsi_t: np.ndarray,
-    z_h2: np.ndarray,
-    z_h3: np.ndarray,
-    *,
-    beta_t: Optional[np.ndarray] = None,
-    ridge_is_fund: Optional[np.ndarray] = None,
-    bic_7_7_15: Optional[np.ndarray] = None,
-    bic_7_15_23: Optional[np.ndarray] = None,
-    pac_mvl: Optional[np.ndarray] = None,
-    params=None,
-    seed_t: float | str | None = "center",
-    p0_band = (-2.0, +0.6),
-    p1_band = (-0.6, +1.2),
-    pad_s: float = 2.0,
-):
-    """Adaptive two‑stage ignition detector with ΔHSI‑based plateau gating."""
-    # --- arrays & guards ---
-    t   = np.asarray(t, float)
-    zf  = np.asarray(z_fund, float)
-    plv = np.asarray(plv_fund, float)
-    hsi = np.asarray(hsi_t, float)
-    z2  = np.asarray(z_h2, float)
-    z3  = np.asarray(z_h3, float)
-    assert t.size == zf.size == plv.size == hsi.size == z2.size == z3.size, "length mismatch"
-    assert params is not None, "params required"
-
-    # --- preproc ---
-    zf_s  = smooth_sec(t, zf, 0.20)
-    plv_s = smooth_sec(t, plv, 0.20)
-    zf_z  = _winsor_robust_z(zf_s)
-
-    # ΔHSI = smoothed HSI minus its median
-    hsi_s   = smooth_sec(t, hsi, 0.45)
-    dHSI    = hsi_s - float(np.nanmedian(hsi_s))
-
-    ridge_ok = np.ones_like(zf, bool) if ridge_is_fund is None else np.asarray(ridge_is_fund, bool)
-    beta_ok  = np.ones_like(zf, bool)
-    if (beta_t is not None) and (getattr(params, 'beta_flat', None) is not None):
-        beta_ok = (np.asarray(beta_t, float) <= params.beta_flat)
-
-    # --- seeding & bands ---
-    t_lo, t_hi = float(t[0] + pad_s), float(t[-1] - pad_s)
-    if (seed_t is None) or (isinstance(seed_t, str) and seed_t.lower() == 'center'):
-        seed_val = float(t[np.nanargmax(zf_z)])
-    else:
-        seed_val = float(np.clip(seed_t, t_lo, t_hi))
-
-    p0_lo, p0_hi = max(t_lo, seed_val + p0_band[0]), min(t_hi, seed_val + p0_band[1])
-    p1_lo, p1_hi = max(t_lo, seed_val + p1_band[0]), min(t_hi, seed_val + p1_band[1])
-    p0_mask = _band_mask(t, p0_lo, p0_hi)
-    p1_mask = _band_mask(t, p1_lo, p1_hi)
-
-    # --- band‑adaptive P1 gates ---
-    def _p1_gates(mask: np.ndarray):
-        m = mask & np.isfinite(zf_z) & np.isfinite(plv_s)
-        z_in   = zf_z[m]
-        plv_in = plv_s[m]
-        z95 = float(np.nanpercentile(z_in, 95)) if z_in.size else 1.6
-        z92 = float(np.nanpercentile(z_in, 92)) if z_in.size else z95
-        z_dyn = 0.9 * min(z95, z92)
-        z_cap = float(getattr(params, 'z_p1_cap', 1.9))
-        z_eff = float(np.clip(getattr(params, 'z_p1', z_dyn), 1.2, z_cap))
-        q60   = float(np.nanpercentile(plv_in, 60)) if plv_in.size else float(np.nanmedian(plv_s))
-        plv_eff = float(np.clip(getattr(params, 'plv_p1', q60 - 0.01), 0.62, 0.86))
-        return z_eff, plv_eff
-
-    z_p1_eff, plv_p1_eff = _p1_gates(p1_mask)
-
-    # --- rising checks ---
-    rz  = _rising_over_tau(zf_z,  t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03))
-    rpl = _rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008))
-
-    # ---------------- P0 ----------------
-    z_p0   = float(np.clip(getattr(params, 'z_p0', 0.6), 0.3, 1.2))
-    plv_p0 = getattr(params, 'plv_p0', np.nanmedian(plv_s))
-    m0 = (zf_z >= z_p0) & (plv_s >= plv_p0) & (hsi_s > getattr(params, 'hsi_broad', np.nanmedian(hsi_s))) & p0_mask
-    i0 = _first_onset(m0, t, getattr(params, 'min_p0_dur', 0.10))
-
-    # ---------------- P1 (two‑stage) ----------------
-    # Stage‑1: z‑led proto‑core (no PLV requirement yet)
-    proto = (zf_z >= z_p1_eff) & rz & ridge_ok & beta_ok & p1_mask
-
-    # ±150 ms dilation to allow PLV catch-up
-    dt  = float(np.median(np.diff(t)))
-    pad = max(1, int(round(0.15 / max(dt, 1e-6))))
-    proto_win = proto.copy()
-    for k in range(1, pad+1):
-        proto_win[:-k] |= proto[k:]
-        proto_win[k:]  |= proto[:-k]
-
-    core = proto_win & (plv_s >= plv_p1_eff) & p1_mask
-    core = _bridge(core, t, 0.02)
-    if i0 is not None:
-        core[:i0] = False
-
-    i1 = _first_onset(core, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
-
-    # widen‑retry if still missing: recompute gates in widened band
-    if i1 is None:
-        p1b = _band_mask(t, max(t_lo, p1_lo-1.0), min(t_hi, p1_hi+1.0))
-        z_p1_eff_b, plv_p1_eff_b = _p1_gates(p1b)
-        proto_b = (zf_z >= z_p1_eff_b) & rz & ridge_ok & beta_ok & p1b
-        proto_win_b = proto_b.copy()
-        for k in range(1, pad+1):
-            proto_win_b[:-k] |= proto_b[k:]
-            proto_win_b[k:]  |= proto_b[:-k]
-        core_b = proto_win_b & (plv_s >= plv_p1_eff_b) & p1b
-        core_b = _bridge(core_b, t, 0.02)
-        if i0 is not None:
-            core_b[:i0] = False
-        i1 = _first_onset(core_b, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
-        if i1 is not None:
-            p1_mask, core = p1b, core_b
-            z_p1_eff, plv_p1_eff = z_p1_eff_b, plv_p1_eff_b
-
-    # ---------------- P2 (ΔHSI tightening + overtone support) ----------------
-    d_q = float(np.nanpercentile(dHSI, 15))
-    rel2 = (z_h2 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h2', 0.05)
-    rel3 = (z_h3 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h3', 0.05)
-
-    m2 = (dHSI <= d_q) & (rel2 | rel3)
-    if bic_7_7_15 is not None:
-        m2 &= (np.asarray(bic_7_7_15, float) >= getattr(params, 'bic_7_7_15', 0.10))
-    if bic_7_15_23 is not None:
-        m2 &= (np.asarray(bic_7_15_23, float) >= getattr(params, 'bic_7_15_23', 0.10))
-    if (pac_mvl is not None) and (getattr(params, 'pac_mvl', None) is not None):
-        m2 &= (np.asarray(pac_mvl, float) >= params.pac_mvl)
-
-    if i1 is not None:
-        m2[:i1] = False
-
-    dur2 = getattr(params, 'min_p2_cycles', 1.0) / max(getattr(params, 'f0', 7.83), 1e-6)
-    i2 = _first_onset(m2, t, dur2)
-
-    # ---------------- P3 ----------------
-    i3 = None
-    if i2 is not None:
-        dz  = np.gradient(zf_z, t, edge_order=1)
-        dz2 = np.gradient(smooth_sec(t, z_h2, 0.20), t, edge_order=1)
-        dz3 = np.gradient(smooth_sec(t, z_h3, 0.20), t, edge_order=1)
-        release = (plv_s < getattr(params, 'plv_release', np.nanpercentile(plv_s, 50))) \
-                  | (dHSI > getattr(params, 'hsi_release', np.nanpercentile(dHSI, 60)))
-        faster  = (dz2 < dz) & (dz2 < 0) & (dz3 < dz) & (dz3 < 0)
-        k = max(1, getattr(params, 'rel_drop_k', 1))
-        if k > 1:
-            fk = faster.copy()
-            for j in range(1, k):
-                fk[:-j] &= faster[j:]
-            faster = fk
-        m3 = release & faster
-        m3[:i2] = False
-        m3 &= (t >= (t[i2] + 0.5))  # refractory
-        i3 = _first_onset(m3, t, 0.0)
-
-    # ---------------- debug prints ----------------
-    if getattr(params, 'debug', False):
-        def _fmt(x): return 'None' if x is None else f"{x:.3f}"
-        g_z   = ((zf_z >= z_p1_eff) & p1_mask).mean()
-        g_plv = ((plv_s >= plv_p1_eff) & p1_mask).mean()
-        rz_b  = (_rising_over_tau(zf_z, t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03)) & p1_mask).mean()
-        rpl_b = (_rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008)) & p1_mask).mean()
-        print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)}) | z_p0={z_p0:.2f} z_p1={z_p1_eff:.2f}")
-        print(f"[ignite] P1 pass-rates  z>=z_p1:{g_z:.2f}  plv>=plv_p1:{g_plv:.2f}  rising_z:{rz_b:.2f}  rising_plv:{rpl_b:.2f}  band:{p1_mask.mean():.2f}")
-        # longest contiguous run in core
-        run = 0.0
-        if 'core' in locals() and core.any():
-            dt = float(np.median(np.diff(t)))
-            cnt, best = 0, 0
-            for v in core:
-                if v: cnt += 1; best = max(best, cnt)
-                else: cnt = 0
-            run = best * dt
-        P0t = None if i0 is None else float(t[i0])
-        P1t = None if i1 is None else float(t[i1])
-        P2t = None if i2 is None else float(t[i2])
-        P3t = None if i3 is None else float(t[i3])
-        print(f"[ignite] longest core run in band ≈ {run:.3f}s  (need ≥ {max(getattr(params,'min_p1_dur',0.12), float(np.median(np.diff(t)))):.3f}s)")
-        print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
-
-    def _pack(idx: Optional[int]) -> dict:
-        return {'idx': None if idx is None else int(idx), 'time': None if idx is None else float(t[idx])}
-
-    return {
-        'P0': _pack(i0), 'P1': _pack(i1), 'P2': _pack(i2), 'P3': _pack(i3),
-        'params': asdict(params) if params is not None else {},
-        'seed_t': float(seed_val),
-        'bands': {'P0': (float(p0_lo), float(p0_hi)), 'P1': (float(p1_lo), float(p1_hi))}
-    }
-
-
-
-
-
-
-
-def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float):
-    for name in ['P0','P1','P2','P3']:
-        node = phases.get(name, {})
-        t_on = node.get('time', None)
-        if t_on is None:
-            continue
-        ax.vlines(t_on, ymin, ymax, linestyles='--', linewidth=1.5,color='cyan')
-        ax.text(t_on, ymin, name, rotation=90, va='bottom', ha='center')
-
-    
 
 def piano_roll_from_spec(spec_by_window, *, harmonics=(7.83, 15.6, 23.4), bw=0.6):
     """
@@ -1084,7 +494,6 @@ def piano_roll_from_spec(spec_by_window, *, harmonics=(7.83, 15.6, 23.4), bw=0.6
     M = np.vstack(rows)                         # (K, T)
     return tW, M
 
-# Build row time-series from the fine spectrogram
 def bandtrace_from_spec(tW, fW, SW, f0, bw=0.8):
     Zdb = 10*np.log10(np.maximum(SW, 1e-12))
     df  = float(np.median(np.diff(fW)))
@@ -1097,7 +506,6 @@ def bandtrace_from_spec(tW, fW, SW, f0, bw=0.8):
     r = robust_z(r)
     r = smooth_sec(tW, r, 0.15)
     return r
-
 
 def plot_ignition_window_report(
     _records,
@@ -1388,7 +796,6 @@ def _sliding_windows(n: int, fs: float, win_sec: float, step_sec: float) -> List
         idx.append((0, n))
     return idx
 
-
 def _plv_across_channels(phases: np.ndarray) -> float:
     """PLV across channels for one time point given phase per-channel."""
     return float(np.abs(np.nanmean(np.exp(1j*phases))))
@@ -1411,7 +818,6 @@ def _plv_timecourse(X: np.ndarray, fs: float, f0: float, bw: float,
         t_mid.append((i0 + i1) / 2 / fs)
         plv.append(float(np.nanmean(R_t[i0:i1])))
     return np.asarray(t_mid), np.asarray(plv)
-
 
 def _narrowband_envelope_z(X, fs, f0, bw):
 
@@ -1483,27 +889,6 @@ def _pac_tort_mi_timecourse(X, fs, theta_band=(7,8), gamma_band=(40,100), win_se
         mi.append(float((Hmax - H) / (Hmax + 1e-12)))
     return np.asarray(t_mid), np.asarray(mi)
 
-# def _pac_mvl_timecourse(X, fs, theta_band=(7.0,8.0), gamma_band=(40.0,100.0),
-#                             win_sec=4.0, step_sec=0.25):
-#     # (this is your MVL version; unweighted resultant of theta phase)
-#     gm_hi = min(gamma_band[1], 0.45*fs); gm_lo = max(gamma_band[0], 5.0)
-#     if gm_hi - gm_lo < 5.0:
-#         c = 0.5*(gm_lo+gm_hi); gm_lo, gm_hi = c-2.5, c+2.5
-#     b_th = firwin(801, theta_band, pass_zero=False, fs=fs)
-#     b_gm = firwin(801, (gm_lo, gm_hi), pass_zero=False, fs=fs)
-#     Xth = filtfilt(b_th, [1.0], X, axis=-1, padlen=min(2400, X.shape[-1]-1))
-#     ph  = np.angle(hilbert(Xth, axis=-1))
-#     ph_med = np.angle(np.nanmean(np.exp(1j*ph), axis=0))
-#     n = X.shape[1]; W = int(round(win_sec*fs)); S = int(round(step_sec*fs))
-#     t_mid, mvl = [], []
-#     for i0 in range(0, max(1, n-W+1), S):
-#         i1 = i0 + W
-#         t_mid.append((i0+i1)/2/fs)
-#         seg = ph_med[i0:i1]
-#         mvl.append(float(np.abs(np.nanmean(np.exp(1j*seg)))))   # unweighted MVL
-#     return np.asarray(t_mid), np.asarray(mvl)
-
-
 def _pac_mvl_timecourse(X, fs, *,
                        theta_band=(7.0, 8.0),
                        gamma_band=(40.0, 100.0),
@@ -1542,7 +927,6 @@ def _pac_mvl_timecourse(X, fs, *,
         mvl.append(np.abs(np.sum(z)) / (np.sum(A[i0:i1][w]) + 1e-12))
         t_mid.append((i0+i1)/2/fs)
     return np.asarray(t_mid), np.asarray(mvl)
-
 
 def _bicoherence_triads_timecourse(X, fs, triads, bw, win_sec, step_sec):
     n = X.shape[1]
@@ -1717,3 +1101,208 @@ def smooth_sec(t, y, sec=0.15):
     t = np.asarray(t, float); y = np.asarray(y, float)
     k = max(1, int(round(sec/np.median(np.diff(t))))); 
     return np.convolve(y, np.ones(k)/k, mode='same') if k>1 else y
+
+
+# ---------------- main detector ----------------
+
+def _detect_ignition_phases(
+    t: np.ndarray,
+    z_fund: np.ndarray,
+    plv_fund: np.ndarray,
+    hsi_t: np.ndarray,
+    z_h2: np.ndarray,
+    z_h3: np.ndarray,
+    *,
+    beta_t: Optional[np.ndarray] = None,
+    ridge_is_fund: Optional[np.ndarray] = None,
+    bic_7_7_15: Optional[np.ndarray] = None,
+    bic_7_15_23: Optional[np.ndarray] = None,
+    pac_mvl: Optional[np.ndarray] = None,
+    params=None,
+    seed_t: float | str | None = "center",
+    p0_band = (-2.0, +0.6),
+    p1_band = (-0.6, +1.2),
+    pad_s: float = 2.0,
+):
+    """Adaptive two‑stage ignition detector with ΔHSI‑based plateau gating."""
+    # --- arrays & guards ---
+    t   = np.asarray(t, float)
+    zf  = np.asarray(z_fund, float)
+    plv = np.asarray(plv_fund, float)
+    hsi = np.asarray(hsi_t, float)
+    z2  = np.asarray(z_h2, float)
+    z3  = np.asarray(z_h3, float)
+    assert t.size == zf.size == plv.size == hsi.size == z2.size == z3.size, "length mismatch"
+    assert params is not None, "params required"
+
+    # --- preproc ---
+    zf_s  = smooth_sec(t, zf, 0.20)
+    plv_s = smooth_sec(t, plv, 0.20)
+    zf_z  = _winsor_robust_z(zf_s)
+
+    # ΔHSI = smoothed HSI minus its median
+    hsi_s   = smooth_sec(t, hsi, 0.45)
+    dHSI    = hsi_s - float(np.nanmedian(hsi_s))
+
+    ridge_ok = np.ones_like(zf, bool) if ridge_is_fund is None else np.asarray(ridge_is_fund, bool)
+    beta_ok  = np.ones_like(zf, bool)
+    if (beta_t is not None) and (getattr(params, 'beta_flat', None) is not None):
+        beta_ok = (np.asarray(beta_t, float) <= params.beta_flat)
+
+    # --- seeding & bands ---
+    t_lo, t_hi = float(t[0] + pad_s), float(t[-1] - pad_s)
+    if (seed_t is None) or (isinstance(seed_t, str) and seed_t.lower() == 'center'):
+        seed_val = float(t[np.nanargmax(zf_z)])
+    else:
+        seed_val = float(np.clip(seed_t, t_lo, t_hi))
+
+    p0_lo, p0_hi = max(t_lo, seed_val + p0_band[0]), min(t_hi, seed_val + p0_band[1])
+    p1_lo, p1_hi = max(t_lo, seed_val + p1_band[0]), min(t_hi, seed_val + p1_band[1])
+    p0_mask = _band_mask(t, p0_lo, p0_hi)
+    p1_mask = _band_mask(t, p1_lo, p1_hi)
+
+    # --- band‑adaptive P1 gates ---
+    def _p1_gates(mask: np.ndarray):
+        m = mask & np.isfinite(zf_z) & np.isfinite(plv_s)
+        z_in   = zf_z[m]
+        plv_in = plv_s[m]
+        z95 = float(np.nanpercentile(z_in, 95)) if z_in.size else 1.6
+        z92 = float(np.nanpercentile(z_in, 92)) if z_in.size else z95
+        z_dyn = 0.9 * min(z95, z92)
+        z_cap = float(getattr(params, 'z_p1_cap', 1.9))
+        z_eff = float(np.clip(getattr(params, 'z_p1', z_dyn), 1.2, z_cap))
+        q60   = float(np.nanpercentile(plv_in, 60)) if plv_in.size else float(np.nanmedian(plv_s))
+        plv_eff = float(np.clip(getattr(params, 'plv_p1', q60 - 0.01), 0.62, 0.86))
+        return z_eff, plv_eff
+
+    z_p1_eff, plv_p1_eff = _p1_gates(p1_mask)
+
+    # --- rising checks ---
+    rz  = _rising_over_tau(zf_z,  t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03))
+    rpl = _rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008))
+
+    # ---------------- P0 ----------------
+    z_p0   = float(np.clip(getattr(params, 'z_p0', 0.6), 0.3, 1.2))
+    plv_p0 = getattr(params, 'plv_p0', np.nanmedian(plv_s))
+    m0 = (zf_z >= z_p0) & (plv_s >= plv_p0) & (hsi_s > getattr(params, 'hsi_broad', np.nanmedian(hsi_s))) & p0_mask
+    i0 = _first_onset(m0, t, getattr(params, 'min_p0_dur', 0.10))
+
+    # ---------------- P1 (two‑stage) ----------------
+    # Stage‑1: z‑led proto‑core (no PLV requirement yet)
+    proto = (zf_z >= z_p1_eff) & rz & ridge_ok & beta_ok & p1_mask
+
+    # ±150 ms dilation to allow PLV catch-up
+    dt  = float(np.median(np.diff(t)))
+    pad = max(1, int(round(0.15 / max(dt, 1e-6))))
+    proto_win = proto.copy()
+    for k in range(1, pad+1):
+        proto_win[:-k] |= proto[k:]
+        proto_win[k:]  |= proto[:-k]
+
+    core = proto_win & (plv_s >= plv_p1_eff) & p1_mask
+    core = _bridge(core, t, 0.02)
+    if i0 is not None:
+        core[:i0] = False
+
+    i1 = _first_onset(core, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
+
+    # widen‑retry if still missing: recompute gates in widened band
+    if i1 is None:
+        p1b = _band_mask(t, max(t_lo, p1_lo-1.0), min(t_hi, p1_hi+1.0))
+        z_p1_eff_b, plv_p1_eff_b = _p1_gates(p1b)
+        proto_b = (zf_z >= z_p1_eff_b) & rz & ridge_ok & beta_ok & p1b
+        proto_win_b = proto_b.copy()
+        for k in range(1, pad+1):
+            proto_win_b[:-k] |= proto_b[k:]
+            proto_win_b[k:]  |= proto_b[:-k]
+        core_b = proto_win_b & (plv_s >= plv_p1_eff_b) & p1b
+        core_b = _bridge(core_b, t, 0.02)
+        if i0 is not None:
+            core_b[:i0] = False
+        i1 = _first_onset(core_b, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
+        if i1 is not None:
+            p1_mask, core = p1b, core_b
+            z_p1_eff, plv_p1_eff = z_p1_eff_b, plv_p1_eff_b
+
+    # ---------------- P2 (ΔHSI tightening + overtone support) ----------------
+    d_q = float(np.nanpercentile(dHSI, 15))
+    rel2 = (z_h2 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h2', 0.05)
+    rel3 = (z_h3 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h3', 0.05)
+
+    m2 = (dHSI <= d_q) & (rel2 | rel3)
+    if bic_7_7_15 is not None:
+        m2 &= (np.asarray(bic_7_7_15, float) >= getattr(params, 'bic_7_7_15', 0.10))
+    if bic_7_15_23 is not None:
+        m2 &= (np.asarray(bic_7_15_23, float) >= getattr(params, 'bic_7_15_23', 0.10))
+    if (pac_mvl is not None) and (getattr(params, 'pac_mvl', None) is not None):
+        m2 &= (np.asarray(pac_mvl, float) >= params.pac_mvl)
+
+    if i1 is not None:
+        m2[:i1] = False
+
+    dur2 = getattr(params, 'min_p2_cycles', 1.0) / max(getattr(params, 'f0', 7.83), 1e-6)
+    i2 = _first_onset(m2, t, dur2)
+
+    # ---------------- P3 ----------------
+    i3 = None
+    if i2 is not None:
+        dz  = np.gradient(zf_z, t, edge_order=1)
+        dz2 = np.gradient(smooth_sec(t, z_h2, 0.20), t, edge_order=1)
+        dz3 = np.gradient(smooth_sec(t, z_h3, 0.20), t, edge_order=1)
+        release = (plv_s < getattr(params, 'plv_release', np.nanpercentile(plv_s, 50))) \
+                  | (dHSI > getattr(params, 'hsi_release', np.nanpercentile(dHSI, 60)))
+        faster  = (dz2 < dz) & (dz2 < 0) & (dz3 < dz) & (dz3 < 0)
+        k = max(1, getattr(params, 'rel_drop_k', 1))
+        if k > 1:
+            fk = faster.copy()
+            for j in range(1, k):
+                fk[:-j] &= faster[j:]
+            faster = fk
+        m3 = release & faster
+        m3[:i2] = False
+        m3 &= (t >= (t[i2] + 0.5))  # refractory
+        i3 = _first_onset(m3, t, 0.0)
+
+    # ---------------- debug prints ----------------
+    if getattr(params, 'debug', False):
+        def _fmt(x): return 'None' if x is None else f"{x:.3f}"
+        g_z   = ((zf_z >= z_p1_eff) & p1_mask).mean()
+        g_plv = ((plv_s >= plv_p1_eff) & p1_mask).mean()
+        rz_b  = (_rising_over_tau(zf_z, t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03)) & p1_mask).mean()
+        rpl_b = (_rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008)) & p1_mask).mean()
+        print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)}) | z_p0={z_p0:.2f} z_p1={z_p1_eff:.2f}")
+        print(f"[ignite] P1 pass-rates  z>=z_p1:{g_z:.2f}  plv>=plv_p1:{g_plv:.2f}  rising_z:{rz_b:.2f}  rising_plv:{rpl_b:.2f}  band:{p1_mask.mean():.2f}")
+        # longest contiguous run in core
+        run = 0.0
+        if 'core' in locals() and core.any():
+            dt = float(np.median(np.diff(t)))
+            cnt, best = 0, 0
+            for v in core:
+                if v: cnt += 1; best = max(best, cnt)
+                else: cnt = 0
+            run = best * dt
+        P0t = None if i0 is None else float(t[i0])
+        P1t = None if i1 is None else float(t[i1])
+        P2t = None if i2 is None else float(t[i2])
+        P3t = None if i3 is None else float(t[i3])
+        print(f"[ignite] longest core run in band ≈ {run:.3f}s  (need ≥ {max(getattr(params,'min_p1_dur',0.12), float(np.median(np.diff(t)))):.3f}s)")
+        print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
+
+    def _pack(idx: Optional[int]) -> dict:
+        return {'idx': None if idx is None else int(idx), 'time': None if idx is None else float(t[idx])}
+
+    return {
+        'P0': _pack(i0), 'P1': _pack(i1), 'P2': _pack(i2), 'P3': _pack(i3),
+        'params': asdict(params) if params is not None else {},
+        'seed_t': float(seed_val),
+        'bands': {'P0': (float(p0_lo), float(p0_hi)), 'P1': (float(p1_lo), float(p1_hi))}
+    }
+
+def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float):
+    for name in ['P0','P1','P2','P3']:
+        node = phases.get(name, {})
+        t_on = node.get('time', None)
+        if t_on is None:
+            continue
+        ax.vlines(t_on, ymin, ymax, linestyles='--', linewidth=1.5,color='cyan')
+        ax.text(t_on, ymin, name, rotation=90, va='bottom', ha='center')
