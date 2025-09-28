@@ -252,8 +252,10 @@ def detect_ignitions_session(
     eeg_channels: Optional[List[str]] = None,
     time_col: str = 'Timestamp',
     out_dir: str = 'exports_ignitions/S01',
-    center_hz: float = 7.83, half_bw_hz: float = 0.6,
-    smooth_sec: float = 0.25, z_thresh: float = 2.5,
+    center_hz: float = 7.83, 
+    half_bw_hz: float = 0.5,
+    smooth_sec: float = 0.25, 
+    z_thresh: float = 2.5,
     min_isi_sec: float = 2.0, window_sec: float = 20.0, merge_gap_sec: float = 5.0,
     R_band: Tuple[float, float] = (8,13), R_win_sec: float = 1.0, R_step_sec: float = 0.25,
     eta_pre_sec: float = 10.0, eta_post_sec: float = 10.0,
@@ -266,7 +268,8 @@ def detect_ignitions_session(
     harmonic_bw_hz: Optional[float] = None,
     make_passport: bool = True,
     show: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
+    session_name: str = "SESSION_NAME"
 ) -> Tuple[Dict[str, object], List[Tuple[int,int]]]:
 
     if eeg_channels is None:
@@ -277,10 +280,12 @@ def detect_ignitions_session(
     fs = infer_fs(RECORDZ, time_col)
     t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
 
-    # --- 1) SR envelope z(t) & onsets (proposal via sr_channel) ---
-    y = get_series(RECORDZ, sr_channel)
+    # --- 1) SR envelope z(t) & onsets (proposal via all eeg_channels) ---
+    Y = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
+    y = Y.mean(axis=0)  # or use median: np.median(Y, axis=0)
     yb = bandpass_safe(y, fs, center_hz - half_bw_hz, center_hz + half_bw_hz)
     env = np.abs(signal.hilbert(yb))
+
     n_smooth = max(1, int(round(smooth_sec*fs)))
     if n_smooth > 1:
         w = np.hanning(n_smooth); w /= w.sum()
@@ -290,6 +295,7 @@ def detect_ignitions_session(
     z = zscore(env_s, nan_policy='omit')
     mask = z >= z_thresh
     on_idx = np.where(np.diff(mask.astype(int)) == 1)[0] + 1
+    
     onsets, last_t = [], -np.inf
     for i in on_idx:
         if t[i] - last_t >= min_isi_sec:
@@ -364,22 +370,18 @@ def detect_ignitions_session(
     g_lo, g_hi = _safe_band(g_lo, g_hi, fs)
     gamma_band = (g_lo, g_hi)
 
-
-    if verbose:
-        print("\n=== Ignition Detection — Session Summary ===\n")
-        # print(f"SR reference: {sr_channel}")
-        print(f"Ignition windows: {ignition_windows_rounded}")
-        print("Estimated SR: ", np.round(valid_harmonics,2))
-        print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
-        print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
-        print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
-        print(f"Event SR mode: {sr_reference}")
-
-    
-
     ch_short = [c.split('.',1)[-1] for c in eeg_channels]
 
+    import test, harmonics
+
     for (a, b) in ign:
+
+        start_idx = int(a * fs)
+        end_idx = int(b * fs)
+        eeg_segment = RECORDZ.iloc[start_idx:end_idx, :]
+        ignition_freqs = harmonics.estimate_session_sr_harmonics(eeg_segment, eeg_channels, 128, 
+                                                        canonical_harmonics=harmonics_hz, search_band=half_bw_hz)
+
         i0 = max(0, int(round(a*fs)))
         i1 = min(L, int(round(b*fs)))
         if i1 - i0 < int(2*fs):
@@ -387,15 +389,15 @@ def detect_ignitions_session(
         Xw = X[:, i0:i1]
 
         # virtual SR
-        if sr_reference.upper() == 'F4' and 'EEG.F4' in eeg_channels:
-            idx = eeg_channels.index('EEG.F4')
-            v_sr = Xw[idx]
-            w_sr = np.zeros(len(eeg_channels)); w_sr[idx] = 1.0
-        else:
-            v_sr, w_sr = _build_virtual_sr(Xw, fs, center_hz, half_bw_hz, mode=sr_reference)
+        # if sr_reference.upper() == 'F4' and 'EEG.F4' in eeg_channels:
+        #     idx = eeg_channels.index('EEG.F4')
+        #     v_sr = Xw[idx]
+        #     w_sr = np.zeros(len(eeg_channels)); w_sr[idx] = 1.0
+        # else:
+        v_sr, w_sr = _build_virtual_sr(Xw, fs, ignition_freqs[0], half_bw_hz, mode=sr_reference)
 
         # t0 from SR1 band
-        f_lo, f_hi = center_hz - half_bw_hz, center_hz + half_bw_hz
+        f_lo, f_hi = ignition_freqs[0] - half_bw_hz, ignition_freqs[0] + half_bw_hz
         tR_ev, R_ev = _kuramoto_R_timeseries(Xw, fs, f_lo, f_hi, win_sec=0.5, step_sec=0.05)
         tR_ev = tR_ev + a
         t0_net = _detect_t0_from_R(tR_ev, R_ev, thresh=0.6)
@@ -428,13 +430,13 @@ def detect_ignitions_session(
         # harmonics (flexible) — use overtones only (exclude base)
         HSI, MaxH = _harmonic_stack_index_flexible(
             v_sr, fs,
-            base_hz=center_hz, base_bw_hz=half_bw_hz,
-            harmonic_centers_hz=valid_harmonics_ot, harmonic_bw_hz=hbw
+            base_hz=ignition_freqs[0], base_bw_hz=half_bw_hz,
+            harmonic_centers_hz=ignition_freqs, harmonic_bw_hz=hbw
         )
 
         # Estimate per-event fundamental (base) to sanitize MaxH against local base
         try:
-            fw, Pw = signal.welch(v_sr, fs=fs, nperseg=int(2*fs))
+            fw, Pw = signal.welch(v_sr, fs=fs, nperseg=min(4096,int(2*fs)))
             # search around base_guess with expanded window
             base_win_lo = max(0.1, base_guess - max(1.2, hbw))
             base_win_hi = base_guess + max(1.2, hbw)
@@ -458,7 +460,7 @@ def detect_ignitions_session(
         i1p = min(len(v_sr), int(round((t0_net+2.0)*fs)))
         seg = v_sr[i0p:i1p]
         if seg.size > 10:
-            th = bandpass_safe(seg, fs, center_hz-0.3, center_hz+0.3)
+            th = bandpass_safe(seg, fs, ignition_freqs[0]-0.3, ignition_freqs[0]+0.3)
             ga = bandpass_safe(seg, fs, gamma_band[0], gamma_band[1])
             env_th = np.abs(signal.hilbert(th))
             env_ga = np.abs(signal.hilbert(ga))
@@ -483,12 +485,10 @@ def detect_ignitions_session(
         kL = max(0, k0 - int(1.0*fs)); kR = min(len(z_env), k0 + int(1.0*fs))
         fs_auc = float(np.trapz(z_env[kL:kR], dx=1/fs)) if kR>kL else np.nan
 
-        # per-window coherence vs SR channel and vs vSR
-        fE, CE = signal.coherence(Xw.mean(axis=0), y[i0:i1], fs=fs, nperseg=int(2*fs))
-        idxF = int(np.argmin(np.abs(fE - center_hz)))
-        msc_sr = float(CE[idxF])
-        fEv, CEv = signal.coherence(Xw.mean(axis=0), v_sr, fs=fs, nperseg=int(2*fs))
-        idxV = int(np.argmin(np.abs(fEv - center_hz)))
+
+
+        fEv, CEv = signal.coherence(Xw.mean(axis=0), v_sr, fs=fs, nperseg=min(4096,int(2*fs)))
+        idxV = int(np.argmin(np.abs(fEv - ignition_freqs[0])))
         msc_v = float(CEv[idxV])
 
         # --- MSC peak vs average: compute around t0_net (±2.5 s) ---
@@ -500,8 +500,8 @@ def detect_ignitions_session(
             return i0s, i1s
         i0_loc, i1_loc   = _slice_idx(t0_net, -2.5, +2.5)
         i0_base, i1_base = _slice_idx(t0_net, -5.0, -2.0)
-        msc_loc_vals  = _msc_f0_series(x_mean[i0_loc:i1_loc],  y_ref[i0_loc:i1_loc],  fs, center_hz, win=1.0, step=0.1)
-        msc_base_vals = _msc_f0_series(x_mean[i0_base:i1_base], y_ref[i0_base:i1_base], fs, center_hz, win=1.0, step=0.1)
+        msc_loc_vals  = _msc_f0_series(x_mean[i0_loc:i1_loc],  y_ref[i0_loc:i1_loc],  fs, ignition_freqs[0], win=1.0, step=0.1)
+        msc_base_vals = _msc_f0_series(x_mean[i0_base:i1_base], y_ref[i0_base:i1_base], fs, ignition_freqs[0], win=1.0, step=0.1)
         msc_peak      = float(np.nanmax(msc_loc_vals))   if msc_loc_vals.size  else np.nan
         msc_mean_loc  = float(np.nanmean(msc_loc_vals))  if msc_loc_vals.size  else np.nan
         msc_base      = float(np.nanmean(msc_base_vals)) if msc_base_vals.size else np.nan
@@ -535,17 +535,25 @@ def detect_ignitions_session(
             pks, _ = signal.find_peaks(z_env, distance=int(1.0*fs), height=0.6*np.nanmax(z_env))
             type_label = 'two-phase' if len(pks) >= 2 else 'fundamental-led'
 
+        
+
+
         rows.append({
             't_start': a, 't_end': b, 'duration_s': float(b-a),
             't0_net': t0_net, 'zR_max': zR_max_ev, 'zR_peak_±5s': zR_peak_5s,
             'fs_z': fs_z, 'fs_auc': fs_auc, 'HSI': HSI, 'MaxH': MaxH, 'MaxH_overtone': MaxH_ov, 'PEL_sec': PEL,
             'seed_ch': seed_ch, 'seed_roi': seed_roi, 'spread_time_sec': spread, 'SF': SF,
-            'msc_7p83_sr': msc_sr, 'msc_7p83_v': msc_v,
+            'msc_7p83_v': msc_v,
             'msc_7p83_v_peak': msc_peak, 'msc_7p83_v_mean_local': msc_mean_loc,
             'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
             'sr_z_max': sr_z_max, 'sr_z_peak_t': sr_z_peak_t,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
-            'type_label': type_label,
+            'type_label': type_label, 'session_name': session_name, 'base_est_hz': base_est_hz, 
+            'sr1': f"{ignition_freqs[0]:.2f}", 
+            'sr2': f"{ignition_freqs[1]:.2f}", 
+            'sr3': f"{ignition_freqs[2]:.2f}",
+            'sr4': f"{ignition_freqs[3]:.2f}",
+            'ignition_freqs': ignition_freqs,
         })
 
     events = pd.DataFrame(rows)
@@ -579,48 +587,6 @@ def detect_ignitions_session(
     if show: plt.show();
     plt.close()
 
-    # plt.figure(figsize=(11,3))
-    # plt.plot(t_cent, zR, lw=1.0, label=f'zR(t) {R_band[0]}–{R_band[1]} Hz')
-    # for (aa,bb) in ign: plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
-    # plt.xlabel('Time (s)'); plt.ylabel('zR'); plt.title('Global synchrony R(t)')
-    # plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'R_timeseries.png'), dpi=140)
-    # if show: plt.show();
-    # plt.close()
-
-    # if tau.size:
-    #     plt.figure(figsize=(7.5,3))
-    #     plt.plot(tau, eta_mean, lw=1.6, label='mean zR (aligned to t0_net)')
-    #     if np.any(np.isfinite(eta_sem)):
-    #         plt.fill_between(tau, eta_mean-eta_sem, eta_mean+eta_sem, alpha=0.2)
-    #     plt.axvline(0, color='k', lw=1)
-    #     plt.xlabel('Time from t0_net (s)'); plt.ylabel('zR'); plt.title('Event-triggered zR(t)')
-    #     plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'ETA_zR.png'), dpi=140)
-    #     if show: plt.show();
-    #     plt.close()
-
-    # # MaxH_hz distribution across events (use sanitized overtone-only values)
-    # if not events.empty and ('MaxH_overtone' in events.columns):
-    #     mh = pd.to_numeric(events['MaxH_overtone'], errors='coerce').to_numpy()
-    #     mh = mh[np.isfinite(mh)]
-    #     # remove any residual base-neighborhood values
-    #     if mh.size:
-    #         mh = mh[np.abs(mh - base_guess) > (base_margin + 1e-6)]
-    #     if mh.size and len(valid_harmonics_ot):
-    #         plt.figure(figsize=(7.5,3))
-    #         lo = float(min(valid_harmonics_ot))
-    #         hi = float(min(max(valid_harmonics_ot), fs/2.0-1e-3))
-    #         nb = max(8, min(30, len(valid_harmonics_ot)*3))
-    #         bins = np.linspace(lo, hi, nb)
-    #         plt.hist(mh, bins=bins, alpha=0.75, edgecolor='k')
-    #         for f0 in valid_harmonics_ot:
-    #             plt.axvline(f0, color='tab:orange', alpha=0.5, lw=1)
-    #         plt.xlabel('MaxH (overtone) frequency (Hz)')
-    #         plt.ylabel('Event count')
-    #         plt.title('MaxH_overtone distribution across events')
-    #         plt.tight_layout(); plt.savefig(os.path.join(out_dir,'MaxH_hz_distribution.png'), dpi=140)
-    #         if show: plt.show();
-    #         plt.close()
-
     # --- 7) summaries & files ---
     if events.empty:
         summary = {'n_events': 0}
@@ -638,6 +604,17 @@ def detect_ignitions_session(
     pd.DataFrame([summary]).to_csv(os.path.join(out_dir,'summary.csv'), index=False)
     if make_passport:
         events.to_csv(os.path.join(out_dir,'event_passport.csv'), index=False)
+
+    if verbose:
+        print("\n=== Ignition Detection — Session Summary ===\n")
+        # print(f"SR reference: {sr_channel}")
+        print(f"Ignition windows: {ignition_windows_rounded}")
+        print("Estimated SR: ", np.round(harmonics_hz,2))
+        print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
+        print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
+        print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
+        print(f"Event SR mode: {sr_reference}")
+
 
     if verbose:
         # print("\n=== Ignition Detection — Session Summary ===")
@@ -667,7 +644,7 @@ def detect_ignitions_session(
             srpm5 = events['sr_z_mean_pm5'].to_numpy()
             msc_v  = events['msc_7p83_v'].to_numpy()  if 'msc_7p83_v'  in events.columns else np.array([])
             msc_pk = events['msc_7p83_v_peak'].to_numpy() if 'msc_7p83_v_peak' in events.columns else np.array([])
-
+            # msc_sr = events['msc_7p83_sr'].to_numpy() if 'msc_7p83_sr' in events.columns else np.array([])
 
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
             
@@ -688,6 +665,7 @@ def detect_ignitions_session(
             print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
             print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
             print(f"  MSC@~7.83 (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
+            # print(f"  MSC@~7.83              — median [IQR]: {fmt_iqr(msc_sr)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
             print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
             # print(f"  MSC@~7.83 peak         — median [IQR]: {fmt_iqr(msc_pk)}")
@@ -705,8 +683,8 @@ def detect_ignitions_session(
             try:
                 top_by_srz = events.sort_values('score', ascending=False)
                 cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v',
-                                        'HSI','fs_z','type_label','seed_roi','seed_ch','score'] if c in events.columns]
-                print("\nTop events by Score (sr_z_max * msc_7p83_v * HSI):")
+                                        'HSI','fs_z','type_label','seed_roi','seed_ch','sr1','sr2','sr3','sr4','score'] if c in events.columns]
+                print("\nTop events by Score (sr_z_max * msc_7p83_v / (1 + HSI):")
                 print(top_by_srz[cols2].to_string(index=False, justify='center'))
             except Exception:
                 pass

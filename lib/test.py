@@ -29,9 +29,11 @@ class FeaturePackCfg:
     fs: Optional[float] = None
     win_sec: float = 4.0
     step_sec: float = 0.1
-    sr_centers: Tuple[float,float,float] = (7.83, 15.6, 23.4)
+    spec_win: float = 1.5
+    spec_ovl: float = 0.8
+    sr_centers: Tuple[float,float,float] = (7.83, 14.3, 20.8)
     bw_hz: float = 0.5
-    ladder: Tuple[float,...] = (7.83, 15.6, 23.4, 31.2, 39.0, 46.8, 54.6)
+    ladder: Tuple[float,...] = (7.83, 14.3, 20.8, 27.3, 33.8, 40.3, 46.8, 53.3)
     ladder_bw: float = 0.6
 
 @dataclass
@@ -274,7 +276,7 @@ def hsi_from_spec_v2(spec,
     return tS, H
 
 def hsi_v3_from_window_spec(tW, fW, SW, *,
-                            ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.5),
+                            ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.3),
                             in_bw=0.5,           # ±Hz around each harmonic (in-band)
                             ring_offset=1.2,     # Hz away from each harmonic (side-ring)
                             ring_bw=0.6,         # ±Hz width of the side-ring
@@ -363,7 +365,7 @@ def _spec_median(X, fs, band=(2,60), win=2.0, ov=0.75):
     # convert t to absolute seconds later outside this function
     return t, fB, SB
 
-def _hsi_from_spec(tS, fS, S, ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.5), lbw=1.0):
+def _hsi_from_spec(tS, fS, S, ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.3), lbw=1.0):
     L = np.zeros_like(fS)
     for hk in ladder:
         L += np.exp(-0.5*((fS-hk)/lbw)**2)
@@ -371,35 +373,6 @@ def _hsi_from_spec(tS, fS, S, ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.5), 
     C = (S * L[:,None]).sum(axis=0) / (S.sum(axis=0)+1e-12)
     H = 1.0 - C
     return H  # per-spec time
-
-def build_pack_fast(_records, eeg_cols, fs, time_col='Timestamp'):
-    # X: (channels, samples); t: absolute seconds
-    X = np.stack([np.asarray(_records[c], float) for c in eeg_cols], axis=0)
-    t = np.asarray(_records[time_col], float)
-
-    # Envelopes (combine→z)
-    z7  = _bp_hilbert_env_z(X, fs, 7.83, 0.5)
-    z15 = _bp_hilbert_env_z(X, fs, 15.6,  0.5)
-    z23 = _bp_hilbert_env_z(X, fs, 23.4,  0.5)
-
-    # PLV@7.83 resampled to raw time
-    plv = _plv_7p8(X, fs, 7.83, 0.5, 4.0, 0.25)
-
-    # Spectrogram (median across channels) + spec-derived HSI
-    t_rel, fS, S = _spec_median(X, fs, band=(2,60), win=2.0, ov=0.75)
-    tS = t[0] + t_rel
-    Hspec = _hsi_from_spec(tS, fS, S, lbw=1.0)
-    H_interp = np.interp(t, tS, Hspec, left=Hspec[0], right=Hspec[-1])
-
-    return {
-        't': t,
-        'z_7p83': z7,
-        'z_15p6': z15,
-        'z_23p4': z23,
-        'plv_7p83': plv,
-        'hsi': H_interp,                  # spec-derived (not flat)
-        'spec': (tS, fS, S),              # attach for Panel A
-    }
 
 def _first_onset(mask: np.ndarray, t: np.ndarray, min_dur: float) -> int | None:
     mask = np.asarray(mask, bool); t = np.asarray(t, float)
@@ -469,7 +442,7 @@ def _bridge(mask: np.ndarray, t: np.ndarray, bridge_sec: float = 0.02) -> np.nda
         er &= (box >= win)
     return er
 
-def piano_roll_from_spec(spec_by_window, *, harmonics=(7.83, 15.6, 23.4), bw=0.6):
+def piano_roll_from_spec(spec_by_window, *, harmonics=(7.8, 14.3, 20.8), bw=0.6):
     """
     spec_by_window: (tW, fW, SW) from your per-window spectrogram
                     (linear power, SW shape = (F, T))
@@ -521,9 +494,14 @@ def plot_ignition_window_report(
     p0_band=(-2.5, +1.5),             # allowed P0 window relative to seed_t (s)
     p1_band=(-1.5, +1.0),             # allowed P1 window relative to seed_t (s)
     pad_s=2.0,                        # ignore this much at window edges
-    centers=[7.8,15.6,23.4], bw=0.5,
+    centers=[7.8,14.3,20.8], bw=0.5,
     debug=False
 ):
+    
+    _fnd = "{:.2f}".format(centers[0]) 
+    _2nd = "{:.2f}".format(centers[1])
+    _3rd = "{:.2f}".format(centers[2])
+
     t = provider.t()
 
     # Raw series from provider
@@ -595,7 +573,7 @@ def plot_ignition_window_report(
                 extent=[t.min(), t.max(), 0.5, 3.5], vmin=-3, vmax=3)
 
     axB.set_yticks([1, 2, 3]); 
-    axB.set_yticklabels(['1× (7.83 Hz)', '2×', '3×'])
+    axB.set_yticklabels([f"1× ({_fnd})", f"2× ({_2nd})", f"3× ({_3rd})"])
     axB.set_title('Harmonic Piano‑Roll (envelope z)')
     axB.set_xlabel('s')
     annotate_phases(axB, phases, 0.5, len(centers) + 0.5)
@@ -613,15 +591,15 @@ def plot_ignition_window_report(
 
     # PANEL C: Fundamental & harmonics envelopes + PLV ===============
     axC = fig.add_subplot(gs[1, 0])
-    axC.plot(t, zf_z, label='z@7.83', lw=1.5)
-    axC.plot(t, z2_z, label='z@15.6', lw=1.3)
-    axC.plot(t, z3_z, label='z@23.4', lw=1.3)
+    axC.plot(t, zf_z, label=f"z@{_fnd}", lw=1.5)
+    axC.plot(t, z2_z, label=f"z@{_2nd}", lw=1.3)
+    axC.plot(t, z3_z, label=f"z@{_3rd}", lw=1.3)
     axC.set_ylabel('z')
     # axC.set_ylim(-3.5, 3.5)
 
 
     axC2 = axC.twinx()
-    axC2.plot(t, provider.plv_fund(), label='PLV@7.8', ls='--', lw=1.4, alpha=0.95)
+    axC2.plot(t, provider.plv_fund(), label=f"PLV@{_fnd}", ls='--', lw=1.4, alpha=0.95)
     plo, phi = np.nanpercentile(plv, [1, 99])
     pad = 0.1 * (phi - plo + 1e-12)
     axC.set_title('Envelopes and PLV')
@@ -694,13 +672,15 @@ def plot_ignition_window_report(
 
     annotate_phases(axD, phases, *axD.get_ylim())
 
-    
+    _fnd = "{:.2f}".format(centers[0]) 
+    _2nd = "{:.2f}".format(centers[1])
+    _3rd = "{:.2f}".format(centers[2])
 
     # Panel E: Focused bicoherence tiles
     axE = fig.add_subplot(gs[2, 0])
     if (b77 is not None) and (b7_15 is not None):
-        axE.plot(t, b77, label='bic (7.8,7.8→15.6)')
-        axE.plot(t, b7_15, label='bic (7.8,15.6→23.4)')
+        axE.plot(t, b77, label=f"bic ({_fnd},{_fnd}→{_2nd})")
+        axE.plot(t, b7_15, label=f"bic ({_fnd},{_2nd}→{_3rd})")
         axE.legend(loc='upper right')
     else:
         axE.text(0.5, 0.5, 'Bicoherence not provided', transform=axE.transAxes, ha='center', va='center')
@@ -733,7 +713,7 @@ def plot_ignition_window_report(
     annotate_phases(axF, phases, *axF.get_ylim())
     
     lo,hi = np.nanpercentile(pac, (1,99)); pad = 0.05*(hi-lo+1e-12)
-    axF.set_ylim(lo-pad, hi+pad)
+    # axF.set_ylim(lo-pad, hi+pad)
 
     
 
@@ -1014,6 +994,12 @@ def compute_session_spectrogram(
 
 def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[float,float]], *, 
                                 cfg: FeaturePackCfg = FeaturePackCfg()) -> Dict[str, np.ndarray]:
+    
+    _fnd = "{:.2f}".format(cfg.sr_centers[0]) 
+    _2nd = "{:.2f}".format(cfg.sr_centers[1])
+    _3rd = "{:.2f}".format(cfg.sr_centers[2])
+
+
     time_col = cfg.time_col
     fs = cfg.fs or _infer_fs(_records, time_col)
     channels = cfg.channels
@@ -1075,21 +1061,11 @@ def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[floa
         'z_23p4': z3,
         'plv_7p83': interp_to_raw(t_plv, plv),
         'hsi': interp_to_raw(t_hsi, hsi),
-        'bico_7_7_15': interp_to_raw(t_bic, bic['(7.83,7.83->15.6)'] if '(7.83,7.83->15.6)' in bic else list(bic.values())[0]),
-        'bico_7_15_23': interp_to_raw(t_bic, bic.get('(7.83,15.6->23.4)', list(bic.values())[-1])),
+        'bico_7_7_15': interp_to_raw(t_bic, bic[f"({_fnd},{_fnd}->{_2nd})"] if f"({_fnd},{_2nd}->{_3rd})" in bic else list(bic.values())[0]),
+        'bico_7_15_23': interp_to_raw(t_bic, bic.get(f"({_fnd},{_2nd}->{_3rd})", list(bic.values())[-1])),
         'pac_mvl': interp_to_raw(t_pac, mvl),
         # (optional) include spec tuple if you already compute one elsewhere
     }
-    # pack['bico_7_7_15'] = np.interp(pack['t'], t_seg0 + t_bic, bic['(7.83,7.83->15.6)'])
-    # pack['bico_7_15_23'] = np.interp(pack['t'], t_seg0 + t_bic, bic['(7.83,15.6->23.4)'])
-    
-    # print(pack['t'].min(), pack['t'].max())           # ~556..581
-    # print(t_plv[:3], t_plv[-3:])                      # starts ~0 (relative)
-    # print((t_plv)[:3], (t_plv)[-3:])        # absolute, matches pack['t'] scale
-
-    # m = (pack['t']>=pack['t'].min()) & (pack['t']<=pack['t'].max())
-    # print("PLV median (window) =", np.median(pack['plv_7p83'][m]))  # should jump to ~0.55–0.68
-
 
     return pack
 
@@ -1306,3 +1282,196 @@ def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float):
             continue
         ax.vlines(t_on, ymin, ymax, linestyles='--', linewidth=1.5,color='cyan')
         ax.text(t_on, ymin, name, rotation=90, va='bottom', ha='center')
+
+
+def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg):
+    assert electrodes and len(electrodes) > 0, "electrodes cannot be empty"
+    
+    # --- parameters ------------------------------------------------------------
+    TIME_COL = "Timestamp"
+    FS = 128.0
+    # PACK_WIN   = 6     # sliding features
+    # PACK_STEP  = 0.15
+    
+    # SPEC_WIN   = 1.5      # per-window spectrogram for HSI_v3
+    # SPEC_OVERLAP =0.8
+    
+    # SPEC_WIN_FINE = 1.5         # try 4.0, 6.0, or 8.0 s
+    # SPEC_OVL_FINE = 0.8         # high overlap for smoother time axis
+    
+
+    # cfg= FeaturePackCfg(
+    #     channels=electrodes, time_col='Timestamp', fs=FS,
+    #     win_sec=PACK_WIN, step_sec=PACK_STEP,
+    #     sr_centers=ladder[:3],
+    #     ladder=ladder,
+    #     bw_hz=0.5,
+    # )
+    
+    # BUILD PACK
+    pack = build_ignition_feature_pack(records,ign_win,cfg=cfg)
+    pack.setdefault('meta', {})['channels_used'] = list(electrodes)
+
+    m = (pack['t'] >= ign_win[0]) & (pack['t'] <= ign_win[1])
+    
+    # SPECTROGRAM - coarse spectrogram for Panel A + HSI (single source of truth)
+    pack['spec'] = compute_session_spectrogram(
+        records, channels=electrodes, time_col='Timestamp', fs=FS,
+        band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+    )
+
+    # PIANO ROLL
+    tWc, fWc, SWc = window_spec_median(
+        records, ign_win, channels=electrodes, fs=FS, time_col='Timestamp',
+        band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+    )
+    tWc = tWc + cfg.spec_win/2.0  # center STFT times
+    pack.setdefault('spec_by_window', {})[(float(ign_win[0]), float(ign_win[1]))] = (tWc, fWc, SWc)
+
+    
+    # HSI 
+    tH, H = hsi_v3_from_window_spec(
+        tWc, fWc, SWc, in_bw=0.5, ring_offset=1.5, ring_bw=0.8, smooth_hz=6.0, ladder=ladder
+    )
+
+    # from scipy.signal import savgol_filter
+    # dt = float(np.median(np.diff(tH)))
+    # win = max(5, int(round(0.9/dt)) | 1)  # ~0.9 s window, force odd
+    # H_s = savgol_filter(H, window_length=win, polyorder=3, mode='interp')
+
+    H_s = smooth_sec(tH, H, 0.45)
+    dHSIw = H_s - np.nanmedian(H_s)                 # ΔHSI in STFT time
+
+    # Build an "edge-valid" mask: discard first/last half-window
+    half = cfg.spec_win / 2.0
+    valid_w = (tWc >= (tWc[0] + half)) & (tWc <= (tWc[-1] - half))
+    
+    # Interpolate only the valid part onto the report timebase (pack['t'])
+    dHSI_t = np.interp(pack['t'], tWc[valid_w], dHSIw[valid_w],
+                       left=np.nan, right=np.nan)
+    
+    pack['hsi'][m] = np.interp(pack['t'][m], tH, H_s, left=H_s[0], right=H_s[-1])
+    h50 = float(np.nanpercentile(pack['hsi'][m], 50))
+
+    
+    # PLV & PAC
+    t_abs = np.asarray(records[TIME_COL], float)
+    t0 = float(t_abs[0])
+
+    X = _get_matrix(records, electrodes)
+
+    # PLV
+    t_plv, plv = _plv_timecourse(
+        X, fs=FS, f0=ladder[0], bw=cfg.bw_hz,
+        win_sec=cfg.win_sec, step_sec=cfg.step_sec)
+    pack['plv_7p83'] = np.interp(pack['t'], t0 + t_plv, plv, left=plv[0], right=plv[-1])
+
+    # PAC MVL
+    t_pac, mvl = _pac_mvl_timecourse(X, fs=128.0,theta_band=(cfg.sr_centers[0]-0.35,cfg.sr_centers[0]+0.35), gamma_band=(40,60),
+                                            win_sec=cfg.win_sec, step_sec=cfg.step_sec,amp_gate_pct=70)
+    pack['pac_mvl'] = np.interp(pack['t'], t0+t_pac, mvl, left=mvl[0], right=mvl[-1])
+
+    
+    # THRESHOLDS
+    z7_win = robust_z(pack['z_7p83'][m])
+    z95    = float(np.nanpercentile(z7_win, 95))
+    h50    = float(np.nanpercentile(pack['hsi'][m], 50))   # for hsi_broad
+    plv60  = float(np.nanpercentile(pack['plv_7p83'][m], 60))
+    h10    = float(np.nanpercentile(pack['hsi'][m], 10))
+    
+    
+    # SEED EVENT
+    ev = ign_out['events']
+    m_overlap = (ev['t_start'] < ign_win[1]) & (ev['t_end'] > ign_win[0])
+    if m_overlap.any():
+        seed_from_event = float(np.clip(ev.loc[m_overlap, 'sr_z_peak_t'].iloc[0], ign_win[0]+2.0, ign_win[1]-2.0))
+    else:
+        seed_from_event = 0.5 * (ign_win[0] + ign_win[1])
+
+    params = PhaseParams(
+        z_p0=0.6,
+        # plv_p0=np.median(plv),
+        plv_p0=np.median(pack['plv_7p83'][m]),
+        z_p1=max(1.0, 0.9*z95),     # z-units now
+        plv_p1=plv60,
+        hsi_broad=h50,              # <-- important for P0
+        hsi_tight=h10,
+        hsi_release=max(h10+0.14, 0.80),
+        plv_release=plv60-0.03,
+        min_p0_dur=0.10, 
+        min_p1_dur=0.12,
+        min_p2_cycles=0.8,
+        rel_h2=0.05, rel_h3=0.05,
+        bic_7_7_15=0.10, bic_7_15_23=0.10,
+    )
+
+    # add optional knobs as attributes
+    params.f0 = ladder[0]
+    params.rise_eps = 0.05
+    params.z_p1_cap    = 1.9      # keep P1 gate in a plausible z‑range
+    params.z_rise_tau  = 0.35
+    params.z_rise_eps  = 0.03
+    params.plv_rise_tau = 0.25    # a bit shorter than 0.25 if needed
+    params.plv_rise_eps = 0.005   # 0.005–0.012 usually works well
+    params.require_plv_rise = False   # default off for this dataset
+    params.debug        = True
+
+    plv55 = float(np.nanpercentile(pack['plv_7p83'][m], 55))
+    params.plv_p1 = max(plv55, plv60) - 0.02    # tiny nudge
+
+
+    # PLOT IGNITION WINDOW
+    fig, phases, traces = plot_ignition_window_report(
+        records, 
+        PackProvider(pack).slice(ign_win[0],ign_win[1]), 
+        electrodes,
+        params=params,
+        hsi_plot_mode="delta", hsi_ylim=("pct",(1,99)),
+        seed_t="center", 
+        # p0_band=(-10,+0.5), 
+        # p1_band=(-10,+1.5), 
+        p0_band=(-2,+0.6),                      # seconds relative to seed_t
+        p1_band=(-1, +1.4),                      # seconds relative to seed_t
+        pad_s=2.0,
+        title=f"Ignition {ign_win[0]}–{ign_win[1]}s",
+        centers=ladder[:3]
+    )
+
+
+def estimate_sr_peaks(records, fs, ign_win, session_harmonics, search_band=0.5):
+    """
+    Get a simple list of estimated SR harmonic frequencies from ignition window EEG (all channels).
+
+    Args:
+        records: DataFrame (time x channels) with EEG data
+        fs: Sampling frequency (Hz)
+        ign_win: Tuple (start_time, end_time in seconds)
+        session_harmonics: List of session-estimated harmonic frequencies (fundamental first)
+        search_band: Frequency search range around each harmonic (± Hz)
+
+    Returns:
+        List of detected harmonic frequencies
+    """
+    # EEG segment extraction
+    start_idx = int(ign_win[0] * fs)
+    end_idx = int(ign_win[1] * fs)
+    eeg_segment = records.iloc[start_idx:end_idx, :].values
+
+    # Average PSD across channels
+    psd_all = [welch(eeg_segment[:, ch], fs, nperseg=eeg_segment.shape[0])[1] 
+               for ch in range(eeg_segment.shape[1])]
+    avg_psd = np.mean(psd_all, axis=0)
+    freqs = np.linspace(0, fs/2, len(avg_psd))
+
+    # Find peak frequencies near harmonics
+    detected_freqs = []
+    for harmonic in session_harmonics:
+        band = (freqs >= harmonic - search_band) & (freqs <= harmonic + search_band)
+        if np.any(band):
+            peak_idx = np.argmax(avg_psd[band])
+            detected_freq = freqs[band][peak_idx]
+            
+            detected_freqs.append(detected_freq)
+        else:
+            detected_freqs.append(None)
+    return detected_freqs

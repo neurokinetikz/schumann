@@ -30,13 +30,13 @@ from scipy.interpolate import griddata
 
 # ------------- utilities -------------
 
-def _get_fs(RECORDS: pd.DataFrame, time_col: str) -> float:
+def _get_fs(records: pd.DataFrame, time_col: str) -> float:
     if 'infer_fs_from_records' in globals():
         try:
-            return float(infer_fs_from_records(RECORDS, time_col=time_col))
+            return float(infer_fs_from_records(records, time_col=time_col))
         except Exception:
             pass
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    t = np.asarray(records[time_col].values, dtype=float)
     dt = np.diff(t)
     dt = dt[np.isfinite(dt) & (dt > 0)]
     if dt.size == 0:
@@ -81,11 +81,13 @@ def find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Seri
             return pd.to_numeric(records[col], errors='coerce').astype(float)
     return None
     
-def _get_channel_vector(RECORDS, ch: str) -> np.ndarray:
-    """Return 1D array for a channel; accepts 'F4' or 'EEG.F4' etc."""
+def _get_channel_vector(records, ch: str) -> np.ndarray:
+    
+    # """Return 1D array for a channel; accepts 'F4' or 'EEG.F4' etc."""
     candidates = {ch, f'EEG.{ch}', ch.upper(), f'EEG.{ch.upper()}'}
-    if isinstance(RECORDS, dict):
-        data = RECORDS.get('data', RECORDS.get('eeg', RECORDS.get('EEG')))
+    if isinstance(records, dict):
+        # print("Using dict-style RECORDS")
+        data = records.get('data', records.get('eeg', records.get('EEG')))
         # pandas DataFrame?
         if hasattr(data, 'columns'):
             cols = list(map(str, data.columns))
@@ -93,7 +95,7 @@ def _get_channel_vector(RECORDS, ch: str) -> np.ndarray:
                 if nm in cols:
                     return np.asarray(data[nm]).astype(float)
         # numpy + channel list?
-        ch_names = RECORDS.get('channel_names') or RECORDS.get('channels')
+        ch_names = records.get('channel_names') or records.get('channels')
         if ch_names is not None and data is not None:
             ch_names = list(map(str, ch_names))
             for nm in candidates:
@@ -101,19 +103,24 @@ def _get_channel_vector(RECORDS, ch: str) -> np.ndarray:
                     i = ch_names.index(nm)
                     return np.asarray(data[:, i]).astype(float)
     # attributes fallback
-    if hasattr(RECORDS, ch):
-        return np.asarray(getattr(RECORDS, ch)).astype(float)
-    if hasattr(RECORDS, 'data') and hasattr(RECORDS, 'channel_names'):
-        ch_names = list(map(str, getattr(RECORDS, 'channel_names')))
+    if hasattr(records, ch):
+        # print("Using attribute-style records")
+        return np.asarray(getattr(records, ch)).astype(float)
+    if hasattr(records, 'data') and hasattr(records, 'channel_names'):
+        # print("Using records.data + records.channel_names")
+        ch_names = list(map(str, getattr(records, 'channel_names')))
         for nm in candidates:
             if nm in ch_names:
                 i = ch_names.index(nm)
-                return np.asarray(getattr(RECORDS, 'data')[:, i]).astype(float)
+                return np.asarray(getattr(records, 'data')[:, i]).astype(float)
     # last try: strip EEG. prefix
     base = ch.replace('EEG.', '')
-    if hasattr(RECORDS, base):
-        return np.asarray(getattr(RECORDS, base)).astype(float)
-    raise KeyError(f"Channel {ch} not found. Tried {sorted(candidates)}")
+    # if hasattr(records, base):
+    #     print("Using stripped attribute-style records")
+    #     return np.asarray(getattr(records, base)).astype(float)
+    # raise KeyError(f"Channel {ch} not found. Tried {sorted(candidates)}")
+
+    return records[ch]
 
 # ------------- Morlet wavelet core -------------
 
@@ -151,7 +158,7 @@ def _cwt_morlet(x: np.ndarray, fs: float, freqs: np.ndarray, w: float = 6.0, dur
 # ------------- detection -------------
 
 def detect_schumann_spikes_wavelet(
-    RECORDS: pd.DataFrame,
+    records: pd.DataFrame,
     signal_col: str,
     time_col: str = 'Timestamp',
     f0: float = 7.83,
@@ -163,9 +170,9 @@ def detect_schumann_spikes_wavelet(
     z_thresh: float = 3.5,
     min_dur_sec: float = 0.25,
 ) -> Dict[str, object]:
-    fs = _get_fs(RECORDS, time_col)
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
-    x = np.asarray(pd.to_numeric(RECORDS[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
+    fs = _get_fs(records, time_col)
+    t = np.asarray(records[time_col].values, dtype=float)
+    x = np.asarray(pd.to_numeric(records[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
     x = signal.detrend(x, type='linear')
 
     harms = np.arange(1, n_harmonics + 1)
@@ -298,7 +305,7 @@ def plot_sai(t: np.ndarray, sai: np.ndarray, title: str = '') -> None:
 # ------------- orchestration -------------
 
 def detect_and_plot_schumann_wavelet(
-    RECORDS: pd.DataFrame,
+    records: pd.DataFrame,
     signal_col: str,
     time_col: str = 'Timestamp',
     f0: float = 7.83,
@@ -312,7 +319,7 @@ def detect_and_plot_schumann_wavelet(
     show: bool = True,
 ) -> Dict[str, object]:
     out = detect_schumann_spikes_wavelet(
-        RECORDS, signal_col, time_col=time_col, f0=f0, n_harmonics=n_harmonics,
+        records, signal_col, time_col=time_col, f0=f0, n_harmonics=n_harmonics,
         w=w, kernel_dur_sec=kernel_dur_sec,
         baseline_win_sec=baseline_win_sec, smooth_sec=smooth_sec,
         z_thresh=z_thresh, min_dur_sec=min_dur_sec)
@@ -346,13 +353,13 @@ Outputs:
 
 # ---------- reuse util from prior modules ----------
 
-def _get_fs(RECORDS: pd.DataFrame, time_col: str) -> float:
+def _get_fs(records: pd.DataFrame, time_col: str) -> float:
     if 'infer_fs_from_records' in globals():
         try:
-            return float(infer_fs_from_records(RECORDS, time_col=time_col))
+            return float(infer_fs_from_records(records, time_col=time_col))
         except Exception:
             pass
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    t = np.asarray(records[time_col].values, dtype=float)
     dt = np.diff(t)
     dt = dt[np.isfinite(dt) & (dt > 0)]
     if dt.size == 0:
@@ -450,7 +457,7 @@ def schumann_activity_index(z: np.ndarray) -> np.ndarray:
 # ---------- fused drift + heatmap ----------
 
 def detect_and_plot_schumann_microgrid_with_heatmaps(
-    RECORDS: pd.DataFrame,
+    records: pd.DataFrame,
     signal_col: str,
     time_col: str = 'Timestamp',
     f0: float = 7.83,
@@ -466,9 +473,9 @@ def detect_and_plot_schumann_microgrid_with_heatmaps(
     ridge_medfilt_sec: float = 0.5,
     show: bool = True,
 ) -> Dict[str, object]:
-    fs = _get_fs(RECORDS, time_col)
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
-    x = np.asarray(pd.to_numeric(RECORDS[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
+    fs = _get_fs(records, time_col)
+    t = np.asarray(records[time_col].values, dtype=float)
+    x = np.asarray(pd.to_numeric(records[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
     x = signal.detrend(x, type='linear')
 
     harms = np.arange(1, n_harmonics+1)
@@ -592,13 +599,13 @@ Outputs:
 
 # ---------- utilities (same as prior modules) ----------
 
-def _get_fs(RECORDS: pd.DataFrame, time_col: str) -> float:
+def _get_fs(records: pd.DataFrame, time_col: str) -> float:
     if 'infer_fs_from_records' in globals():
         try:
-            return float(infer_fs_from_records(RECORDS, time_col=time_col))
+            return float(infer_fs_from_records(records, time_col=time_col))
         except Exception:
             pass
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    t = np.asarray(records[time_col].values, dtype=float)
     dt = np.diff(t)
     dt = dt[np.isfinite(dt) & (dt > 0)]
     if dt.size == 0:
@@ -696,7 +703,7 @@ def schumann_activity_index(z: np.ndarray) -> np.ndarray:
 # ---------- global TF with ridge overlay ----------
 
 def detect_and_plot_schumann_microgrid_with_global_tf(
-    RECORDS: pd.DataFrame,
+    records: pd.DataFrame,
     signal_col: str,
     time_col: str = 'Timestamp',
     f0: float = 7.83,
@@ -712,9 +719,9 @@ def detect_and_plot_schumann_microgrid_with_global_tf(
     ridge_medfilt_sec: float = 0.5,
     show: bool = True,
 ) -> Dict[str, object]:
-    fs = _get_fs(RECORDS, time_col)
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
-    x = np.asarray(pd.to_numeric(RECORDS[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
+    fs = _get_fs(records, time_col)
+    t = np.asarray(records[time_col].values, dtype=float)
+    x = np.asarray(pd.to_numeric(records[signal_col], errors='coerce').fillna(0.0).values, dtype=float)
     x = signal.detrend(x, type='linear')
 
     harms = np.arange(1, n_harmonics+1)
@@ -1025,21 +1032,21 @@ print({k: v.shape for k,v in etas['eta_pac'].items()})
 
 # ---------- utilities ----------
 
-def _get_fs(RECORDS: pd.DataFrame, time_col: str) -> float:
+def _get_fs(records: pd.DataFrame, time_col: str) -> float:
     if 'infer_fs_from_records' in globals():
         try:
-            return float(infer_fs_from_records(RECORDS, time_col=time_col))
+            return float(infer_fs_from_records(recordsrecords, time_col=time_col))
         except Exception:
             pass
-    t = np.asarray(RECORDS[time_col].values, dtype=float)
+    t = np.asarray(records[time_col].values, dtype=float)
     dt = np.diff(t); dt = dt[np.isfinite(dt) & (dt>0)]
     if dt.size == 0: raise ValueError('Cannot infer fs')
     return 1.0/np.median(dt)
 
 
-def _autoelectrodes(RECORDS: pd.DataFrame, time_col: str) -> List[str]:
+def _autoelectrodes(records: pd.DataFrame, time_col: str) -> List[str]:
     els = []
-    for col in RECORDS.columns:
+    for col in records.columns:
         if col == time_col: continue
         if col.startswith('EEG.'):
             ch = col.split('.',1)[1]
@@ -1135,7 +1142,7 @@ def _eta_time_series(onsets: np.ndarray, tvec: np.ndarray, y: np.ndarray, span_s
 # ---------- main orchestration ----------
 
 def run_overlap_coherence_etas(
-    RECORDS: pd.DataFrame,
+    records: pd.DataFrame,
     fused: Dict[str, object],
     electrodes: Optional[List[str]] = None,
     time_col: str = 'Timestamp',
@@ -1150,15 +1157,15 @@ def run_overlap_coherence_etas(
     n_boot: int = 200,
     show: bool = True,
 ) -> Dict[str, object]:
-    fs = _get_fs(RECORDS, time_col)
+    fs = _get_fs(records, time_col)
     if electrodes is None:
-        electrodes = _autoelectrodes(RECORDS, time_col)
+        electrodes = _autoelectrodes(records, time_col)
     pac_pairs = pac_pairs or {'theta→gamma':((4,8),(30,80))}
 
     # Build sensor matrix X
     series=[]
     for ch in electrodes:
-        s = find_channel_series(RECORDS, ch)
+        s = find_channel_series(records, ch)
         if s is None: continue
         series.append(np.asarray(s.values, dtype=float))
     X = np.vstack(series)
@@ -1289,13 +1296,13 @@ def _as_list(x):
     return None
 
 
-def _get_channel_array(RECORDS, channels):
+def _get_channel_array(records, channels):
     """Stack multiple channel vectors into a 2D array (n_channels, n_samples).
-    Relies on project helper `_get_channel_vector(RECORDS, ch)`.
+    Relies on project helper `_get_channel_vector(records, ch)`.
     """
     arr = []
     for ch in channels:
-        v = _get_channel_vector(RECORDS, ch)
+        v = _get_channel_vector(records, ch)
         v = np.asarray(v, dtype=float)
         if v.ndim != 1:
             raise ValueError(f"Channel {ch!r} is not a 1-D vector")
@@ -1307,10 +1314,110 @@ def _get_channel_array(RECORDS, channels):
     return np.vstack(arr)
 
 
+# Example usage:
+# session_harmonics = estimate_session_sr_harmonics(RECORDS, ELECTRODES, fs=128)
+# print(session_harmonics)
+
+
+
+
+# def estimate_session_sr(records, fs, sr_channel=None, band=(1.0, 60.0), nperseg=None):
+#     """
+#     Estimate SR harmonics for an entire session using all EEG electrodes or specified channels.
+
+#     Args:
+#         records: DataFrame with EEG data (time x channels).
+#         fs: Sampling frequency (Hz).
+#         sr_channel: List of channels or None to use all channels.
+#         band: Frequency band to limit the search (min_freq, max_freq).
+#         nperseg: Segment length for Welch's method (optional).
+
+#     Returns:
+#         List of detected SR harmonic frequencies (fundamental first).
+#     """
+    # if sr_channel is not None:
+    #     eeg_data = records[sr_channel].values
+    # else:
+    #     eeg_data = records.values  # all channels
+
+    # psd_all = []
+    # for ch_idx in range(eeg_data.shape[1]):
+    #     freqs, psd = welch(eeg_data[:, ch_idx], fs, nperseg=nperseg)
+    #     band_mask = (freqs >= band[0]) & (freqs <= band[1])
+    #     psd_all.append(psd[band_mask])
+
+    # avg_psd = np.mean(psd_all, axis=0)
+    # freqs_band = freqs[band_mask]
+
+    # # Identify peaks for SR fundamental and harmonics
+    # detected_freqs = []
+    # fundamental_range = (7, 9)  # typical SR fundamental range
+    # harmonics = [fundamental_range[0] * i for i in range(1, int(band[1] // fundamental_range[0]) + 1)]
+
+    # for harmonic in harmonics:
+    #     search_band = 0.5
+    #     harmonic_band = (freqs_band >= harmonic - search_band) & (freqs_band <= harmonic + search_band)
+    #     if np.any(harmonic_band):
+    #         peak_idx = np.argmax(avg_psd[harmonic_band])
+    #         detected_freq = freqs_band[harmonic_band][peak_idx]
+    #         detected_freqs.append(detected_freq)
+
+    # return detected_freqs
+
+    
+
+# Example usage:
+# session_sr_freqs = estimate_session_sr(records=RECORDS, fs=128, sr_channel=['EEG.F3', 'EEG.F4'])
+# print(session_sr_freqs)
+
+
+
+
+
+def estimate_session_sr_harmonics(records, electrodes, fs, canonical_harmonics=[7.8, 14.1, 20.3, 26.4], search_band=0.5):
+    """
+    Estimate average Schumann Resonance (SR) frequencies for canonical harmonic values across an EEG session.
+
+    Args:
+        records: DataFrame containing EEG data (time x channels).
+        electrodes: List of EEG channel names to include.
+        fs: Sampling frequency (Hz).
+        canonical_harmonics: List of canonical SR harmonic frequencies to estimate.
+        search_band: Frequency search range around each canonical harmonic (± Hz).
+
+    Returns:
+        List of estimated harmonic frequencies, matching canonical harmonics order.
+    """
+    # print(records.columns)
+    # print(records.columns,electrodes.columns)
+    eeg_data = records[electrodes].values
+
+    # Compute PSD for each channel and average across channels
+    psds = []
+    for channel_idx in range(eeg_data.shape[1]):
+        freqs, psd = welch(eeg_data[:, channel_idx], fs, nperseg=min(4096, len(eeg_data)))
+        psds.append(psd)
+
+    avg_psd = np.mean(psds, axis=0)
+
+    # Estimate harmonics based on canonical values
+    harmonics_freqs = []
+    for canonical_freq in canonical_harmonics:
+        harmonic_mask = (freqs >= canonical_freq - search_band) & (freqs <= canonical_freq + search_band)
+        if np.any(harmonic_mask):
+            harmonic_idx = np.argmax(avg_psd[harmonic_mask])
+            harmonic_freq = freqs[harmonic_mask][harmonic_idx]
+            harmonics_freqs.append(harmonic_freq)
+        else:
+            harmonics_freqs.append(None)
+
+    return harmonics_freqs
+
+
 def estimate_sr_harmonics(
-    RECORDS,
+    records,
     sr_channel='EEG.F4',
-    fs=None,
+    fs=128,
     f_can=(7.83, 14.3, 20.8, 27.3, 33.8),
     search_halfband=0.8,
     nperseg_sec=32.0,
@@ -1326,7 +1433,7 @@ def estimate_sr_harmonics(
 
     Parameters
     ----------
-    RECORDS : DataFrame
+    records : DataFrame
         Session records containing EEG channels.
     sr_channel : str or sequence[str]
         Channel name (e.g., 'EEG.F4') or a list/tuple of channel names.
@@ -1352,19 +1459,19 @@ def estimate_sr_harmonics(
     """
     # Infer sampling rate
     if fs is None:
-        fs = _infer_fs(RECORDS, time_col)
+        fs = _infer_fs(records, time_col)
 
     # Build data array `x` (shape: (n_channels, n_samples))
-    ch_list = _as_list(sr_channel)
-    if ch_list is None:  # single channel
-        x = np.asarray(_get_channel_vector(RECORDS, sr_channel), dtype=float)
-        if x.ndim != 1:
-            raise ValueError("Expected a 1-D channel vector")
-        x = x[None, :]  # (1, n)
-    else:
-        if len(ch_list) == 0:
-            raise ValueError("sr_channel list is empty")
-        x = _get_channel_array(RECORDS, ch_list)  # (k, n)
+    # ch_list = _as_list(sr_channel)
+    # if ch_list is None:  # single channel
+    #     x = np.asarray(_get_channel_vector(records, sr_channel), dtype=float)
+    #     if x.ndim != 1:
+    #         raise ValueError("Expected a 1-D channel vector")
+    #     x = x[None, :]  # (1, n)
+    # else:
+    #     if len(ch_list) == 0:
+            # raise ValueError("sr_channel list is empty")
+    x = _get_channel_array(records, sr_channel)  # (k, n)
 
     # Welch parameters
     nper = int(round(nperseg_sec * fs))

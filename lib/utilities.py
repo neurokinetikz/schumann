@@ -59,12 +59,88 @@ def zscore(x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, float)
     return (x - np.mean(x)) / (np.std(x) + 1e-12)
 
-def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv"):
+# def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv"):
+#     """Load CSV as in user's snippet and return a pre-processed DataFrame.
+#     Expects columns: 'Timestamp' (seconds or ms) and 'EEG.<electrode>' per channel.
+#     """
+    # if device == 'emotiv':
+    #     df = pd.read_csv(csv_path, low_memory=False, header="infer")
+    #     # if 'Timestamp' not in df.columns:
+    #     #     # Create timestamps starting at 0, incrementing by 1/128 for each row
+    #     df['Timestamp'] = np.arange(len(df)) / 128.0
+    #     df = df.sort_values(by=['Timestamp'])
+    # else:
+    #     # 2) map Muse channels → EEG.<name>
+    #     default_map = {
+    #         "eeg_1": "EEG.AF7",
+    #         "eeg_2": "EEG.AF8",
+    #         "eeg_3": "EEG.TP9",
+    #         "eeg_4": "EEG.TP10",
+    #     }
+
+    #     cols_lower = {c.lower(): c for c in df.columns}
+        
+    #     resolved = {}
+    #     for muse_col, eeg_name in default_map.items():
+    #         key = muse_col.lower()
+    #         if True:
+    #             resolved[eeg_name] = cols_lower[key]   # save the real column name
+    #             df.rename(columns={key: eeg_name}, inplace=True)
+    #         else:
+    #             # allow soft failure; you may not always have all 4 channels
+    #             # print or just skip
+    #             pass
+        
+    #     df = df.dropna(subset=['EEG.AF7', 'EEG.AF8','EEG.TP9', 'EEG.TP10'])
+    
+    # # Normalize time to start at 0
+    # df['Timestamp'] = df['Timestamp'] - df['Timestamp'].iloc[0]
+    # # If Timestamp looks like milliseconds, convert to seconds
+    # if df['Timestamp'].iloc[-1] > 1e6:
+    #     df['Timestamp'] = df['Timestamp'] / 1000.0
+
+    # # High-pass each electrode at 1 Hz and compute squared power
+    # for e in electrodes:
+    #     ch = col(e)
+    #     if ch not in df.columns:
+    #         continue
+    #     s = df[ch].astype(float)
+    #     # Handle NaNs by forward/backward filling before filtering
+    #     s = s.interpolate(limit_direction='both')
+    #     filt = butter_highpass(s.values, cutoff_hz=1.0, fs=FS, order=2)
+    #     df[f"{ch}.FILTERED"] = filt
+    #     df[f"{ch}.FILTERED.POW"] = filt * filt
+
+    #     # Band-pass per range, absolute & relative power, binary bins
+    #     pow_cols = []
+    #     for w, (f1, f2) in RANGES.items():
+    #         band_sig = butter_bandpass(filt, f1, f2, fs=FS, order=4)
+    #         band_col = f"{ch}.{w}"
+    #         pow_col = f"POW.{ch}.{w}"
+    #         df[band_col] = band_sig
+    #         df[pow_col] = band_sig * band_sig
+    #         pow_cols.append(pow_col)
+    #         # complexity bins (threshold at band mean)
+    #         df[f"{ch}.{w}.BIN"] = (band_sig < np.nanmean(band_sig)).astype(int)
+
+    #     # Relative power across this channel's bands
+    #     pow_sum = df[pow_cols].sum(axis=1).replace(0, np.nan)
+    #     for w in RANGES.keys():
+    #         pc = f"POW.{ch}.{w}"
+    #         df[f"{pc}.REL"] = df[pc] / pow_sum
+
+    # return df
+
+
+def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1):
     """Load CSV as in user's snippet and return a pre-processed DataFrame.
     Expects columns: 'Timestamp' (seconds or ms) and 'EEG.<electrode>' per channel.
     """
     if device == 'emotiv':
-        df = pd.read_csv(csv_path, low_memory=False, header=1).sort_values(by=['Timestamp']).reset_index(drop=True)
+        df = pd.read_csv(csv_path, low_memory=False, header=header)
+        df['Timestamp'] = np.arange(len(df)) / fs
+        # print(df.columns)
+        df.sort_values(by=['Timestamp']).reset_index(drop=True)
     else:
         df = pd.read_csv(csv_path, low_memory=False, header=0).sort_values(by=['timestamps']).reset_index(drop=True)
         df.rename(columns={'timestamps': 'Timestamp'}, inplace=True)
@@ -129,6 +205,7 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv"):
             df[f"{pc}.REL"] = df[pc] / pow_sum
 
     return df
+
 
 
 # ==== FILTER DESIGN HELPERS ===============
