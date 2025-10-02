@@ -389,11 +389,6 @@ def detect_ignitions_session(
         Xw = X[:, i0:i1]
 
         # virtual SR
-        # if sr_reference.upper() == 'F4' and 'EEG.F4' in eeg_channels:
-        #     idx = eeg_channels.index('EEG.F4')
-        #     v_sr = Xw[idx]
-        #     w_sr = np.zeros(len(eeg_channels)); w_sr[idx] = 1.0
-        # else:
         v_sr, w_sr = _build_virtual_sr(Xw, fs, ignition_freqs[0], half_bw_hz, mode=sr_reference)
 
         # t0 from SR1 band
@@ -544,8 +539,8 @@ def detect_ignitions_session(
             'fs_z': fs_z, 'fs_auc': fs_auc, 'HSI': HSI, 'MaxH': MaxH, 'MaxH_overtone': MaxH_ov, 'PEL_sec': PEL,
             'seed_ch': seed_ch, 'seed_roi': seed_roi, 'spread_time_sec': spread, 'SF': SF,
             'msc_7p83_v': msc_v,
-            'msc_7p83_v_peak': msc_peak, 'msc_7p83_v_mean_local': msc_mean_loc,
-            'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
+            # 'msc_7p83_v_peak': msc_peak, 'msc_7p83_v_mean_local': msc_mean_loc,
+            # 'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
             'sr_z_max': sr_z_max, 'sr_z_peak_t': sr_z_peak_t,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
             'type_label': type_label, 'session_name': session_name, 'base_est_hz': base_est_hz, 
@@ -614,16 +609,6 @@ def detect_ignitions_session(
         print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
         print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
         print(f"Event SR mode: {sr_reference}")
-
-
-    if verbose:
-        # print("\n=== Ignition Detection — Session Summary ===")
-        # print(f"Ignition windows (rounded, whole seconds): {ignition_windows_rounded}")
-        # print(f"SR reference: {sr_channel}")
-        # print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
-        # print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
-        # print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
-        # print(f"Event SR mode: {sr_reference}")
         harm_src = 'custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'
         # print(f"PEL gamma band: {gamma_band[0]:.1f}–{gamma_band[1]:.1f} Hz; Harmonics (valid, {harm_src}): {np.round(valid_harmonics,3)}")
 
@@ -648,7 +633,6 @@ def detect_ignitions_session(
 
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
             
-
             # event-centric
             fsz  = events['fs_z'].to_numpy()
             HSIv = events['HSI'].to_numpy()
@@ -664,15 +648,13 @@ def detect_ignitions_session(
             print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
             print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
             print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
-            print(f"  MSC@~7.83 (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
-            # print(f"  MSC@~7.83              — median [IQR]: {fmt_iqr(msc_sr)}")
+            print(f"  MSC@~7.8 Hz (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
             print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
-            # print(f"  MSC@~7.83 peak         — median [IQR]: {fmt_iqr(msc_pk)}")
             print(f"  Coverage of recording  — {rec_cov:.2f}%")
+            
             # print("\n— Event-centric metrics —")
             # print(f"  FS z (SR1)             — median [IQR]: {fmt_iqr(fsz)}")
-            
             # # print(f"  PEL Γ→θ lag (s)        — median [IQR]: {fmt_iqr(PELv)}")
             # print(f"  Seed ROI distribution  — ", ",".join([f"{k}: {int(v)} ({100.0*v/n_events:.0f}%)" for k,v in seed_counts.items()]))
             # print(f"  Spread time (s)        — median [IQR]: {fmt_iqr(spread)}")

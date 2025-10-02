@@ -43,25 +43,39 @@ class PhaseParams:
     z_p0: float = 1.0
     plv_p0: float = 0.40
     hsi_broad: float = 0.35
-    min_p0_dur: float = 0.5
+    min_p0_dur: float = 0.25
     # P1
-    z_p1: float = 2.0
-    plv_p1: float = 0.60
+    z_p1: Optional[float] = None
+    plv_p1: Optional[float] = None
+    z_p1_cap: float = 1.7
+    z_p1_min: float = 1.2
+    plv_p1_min: float = 0.58
+    plv_p1_cap: float = 0.85
     ridge_required: bool = True
     beta_flat: Optional[float] = 1.2
-    min_p1_dur: float = 0.5
+    min_p1_dur: float = 0.35
+    z_p1_sigma: float = 2.0
+    plv_p1_sigma: float = 1.75
+    plv_slope_min: float = 0.003
+    plv_slope_window: float = 0.06
     # P2
     hsi_tight: float = 0.30
     rel_h2: float = 0.30
     rel_h3: float = 0.30
     bic_7_7_15: float = 0.10
     bic_7_15_23: float = 0.10
-    pac_mvl: Optional[float] = 0.20
+    pac_mvl: Optional[float] = None
     min_p2_cycles: float = 2.0
+    p2_score_weights: Tuple[float, float, float, float, float] = (0.04, 0.04, 0.48, 0.44, 0.15)
+    p2_score_thresh: float = 0.65
     # P3
     plv_release: float = 0.60
     hsi_release: float = 0.35
     rel_drop_k: int = 2
+    plv_release_slope: float = -0.002
+    # shared adaptivity
+    baseline_span: float = 1.5
+    seed_weights: Tuple[float, float, float] = (0.52, 0.24, 0.24)
 
     def p2_min_dur(self) -> float:
         return self.min_p2_cycles / max(self.f0, 1e-6)
@@ -140,8 +154,6 @@ class PackProvider(BaseProvider):
             if key in spec_by:
                 return spec_by[key]
         return self.pack.get('spec')  # fallback
-
-
 
 def _slice_spec_to_window(spec, window, min_cols=20):
     """Return (tW, fW, SW) for the window. If the mask is too small, widen to nearest columns."""
@@ -383,6 +395,22 @@ def _first_onset(mask: np.ndarray, t: np.ndarray, min_dur: float) -> int | None:
             return int(s)
     return None
 
+def _collect_runs(mask: np.ndarray, t: np.ndarray, min_dur: float, dt: float) -> List[Tuple[int, int]]:
+    mask = np.asarray(mask, bool)
+    if mask.size == 0:
+        return []
+    dm = np.diff(mask.astype(int), prepend=0, append=0)
+    starts = np.where(dm == 1)[0]
+    ends = np.where(dm == -1)[0] - 1
+    runs: List[Tuple[int, int]] = []
+    for s, e in zip(starts, ends):
+        if e < s:
+            continue
+        dur = float((t[e] - t[s]) if e > s else 0.0) + dt
+        if dur >= min_dur - 1e-9:
+            runs.append((int(s), int(e)))
+    return runs
+
 def _band_mask(t: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return (t >= lo) & (t <= hi)
 
@@ -495,7 +523,8 @@ def plot_ignition_window_report(
     p1_band=(-1.5, +1.0),             # allowed P1 window relative to seed_t (s)
     pad_s=2.0,                        # ignore this much at window edges
     centers=[7.8,14.3,20.8], bw=0.5,
-    debug=False
+    debug=False,
+    session_name=None
 ):
     
     _fnd = "{:.2f}".format(centers[0]) 
@@ -717,7 +746,7 @@ def plot_ignition_window_report(
 
     
 
-    fig.suptitle(title or 'Ignition Window Report', y=0.98)
+    # fig.suptitle(title or 'Ignition Window Report', y=0.98)
 
     traces = {
         't': t, 'z_fund': zf_z, 'z_h2': z2_z, 'z_h3': z3_z, 'plv': plv, 'hsi': hsi,
@@ -725,8 +754,26 @@ def plot_ignition_window_report(
         'phases': phases,
     }
 
-    fig.suptitle(title, fontsize=16, y=1.05)
+    # fig.suptitle(title, fontsize=16, y=1.05)
     # fig.set_constrained_layout_pads(wspace=0.02, hspace=0.06, w_pad=0.02, h_pad=0.02)
+
+
+    # --- compute metrics for annotation ---
+    srz_max = float(np.nanmax(zf_z))
+    msc = float(np.nanmean(plv))
+    hsi_val = float(np.nanmean(hsi))
+    score = srz_max*msc/(1+hsi_val) #float(np.nanmean([srz_max, msc, hsi_val]))
+
+
+    # Panel plots (A-F) omitted for brevity, same as original...
+    # [keep all panel plotting code unchanged]
+
+
+    # Add a single top-level title with session info and metrics
+    sup_title = f"SRz_max={srz_max:.2f}, MSC={msc:.2f}, HSI={hsi_val:.2f}, Score={score:.2f}"
+    if title:
+        sup_title = f"{title}\n{session_name}"
+    fig.suptitle(sup_title, fontsize=14, y=1.05)
 
     # # or (no constrained_layout):
     # gs.update(wspace=0.18, hspace=0.55)
@@ -917,7 +964,14 @@ def _bicoherence_triads_timecourse(X, fs, triads, bw, win_sec, step_sec):
     phases = {}
     for f0 in centers:
         b  = _fir_bandpass(f0, bw, fs)
-        Xb = filtfilt(b, [1.0], X, axis=-1, padlen=3*len(b))
+        padlen = min(3*len(b), X.shape[-1]-1)
+        if padlen < 1:
+            Xb = np.zeros_like(X)
+        else:
+            try:
+                Xb = filtfilt(b, [1.0], X, axis=-1, padlen=padlen)
+            except ValueError:
+                Xb = filtfilt(b, [1.0], X, axis=-1, method='gust')
         phases[f0] = np.angle(hilbert(Xb, axis=-1))  # (ch, n)
 
     t_mid = []
@@ -1081,6 +1135,7 @@ def smooth_sec(t, y, sec=0.15):
 
 # ---------------- main detector ----------------
 
+
 def _detect_ignition_phases(
     t: np.ndarray,
     z_fund: np.ndarray,
@@ -1099,214 +1154,352 @@ def _detect_ignition_phases(
     p0_band = (-2.0, +0.6),
     p1_band = (-0.6, +1.2),
     pad_s: float = 2.0,
+    return_debug: bool = False,
 ):
-    """Adaptive two‑stage ignition detector with ΔHSI‑based plateau gating."""
-    # --- arrays & guards ---
-    t   = np.asarray(t, float)
-    zf  = np.asarray(z_fund, float)
-    plv = np.asarray(plv_fund, float)
-    hsi = np.asarray(hsi_t, float)
-    z2  = np.asarray(z_h2, float)
-    z3  = np.asarray(z_h3, float)
-    assert t.size == zf.size == plv.size == hsi.size == z2.size == z3.size, "length mismatch"
+    """Phase-aware ignition detector returning P0-P3 events and confidences."""
     assert params is not None, "params required"
 
-    # --- preproc ---
-    zf_s  = smooth_sec(t, zf, 0.20)
-    plv_s = smooth_sec(t, plv, 0.20)
-    zf_z  = _winsor_robust_z(zf_s)
+    t = np.asarray(t, float)
+    zf = np.asarray(z_fund, float)
+    plv = np.asarray(plv_fund, float)
+    hsi = np.asarray(hsi_t, float)
+    z2 = np.asarray(z_h2, float)
+    z3 = np.asarray(z_h3, float)
+    n = t.size
+    assert n == plv.size == hsi.size == z2.size == z3.size == zf.size, "length mismatch"
+    if n == 0:
+        raise ValueError("ignition window slice contains no samples")
 
-    # ΔHSI = smoothed HSI minus its median
-    hsi_s   = smooth_sec(t, hsi, 0.45)
-    dHSI    = hsi_s - float(np.nanmedian(hsi_s))
+    def _np_percentile(arr: np.ndarray, p: float, default: float = np.nan) -> float:
+        arr = np.asarray(arr, float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return default
+        return float(np.nanpercentile(arr, p))
 
-    ridge_ok = np.ones_like(zf, bool) if ridge_is_fund is None else np.asarray(ridge_is_fund, bool)
-    beta_ok  = np.ones_like(zf, bool)
-    if (beta_t is not None) and (getattr(params, 'beta_flat', None) is not None):
-        beta_ok = (np.asarray(beta_t, float) <= params.beta_flat)
+    def _robust_z(arr: np.ndarray, idx: Optional[int]) -> float:
+        if idx is None or idx < 0 or idx >= arr.size:
+            return 0.0
+        vals = arr[np.isfinite(arr)]
+        if vals.size < 3:
+            return 0.0
+        med = np.nanmedian(vals)
+        mad = np.nanmedian(np.abs(vals - med))
+        mad = max(1e-6, 1.4826 * mad)
+        return float((arr[idx] - med) / mad)
 
-    # --- seeding & bands ---
-    t_lo, t_hi = float(t[0] + pad_s), float(t[-1] - pad_s)
-    if (seed_t is None) or (isinstance(seed_t, str) and seed_t.lower() == 'center'):
-        seed_val = float(t[np.nanargmax(zf_z)])
-    else:
-        seed_val = float(np.clip(seed_t, t_lo, t_hi))
+    def _sigmoid(x: float) -> float:
+        return float(1.0 / (1.0 + np.exp(-x)))
 
-    p0_lo, p0_hi = max(t_lo, seed_val + p0_band[0]), min(t_hi, seed_val + p0_band[1])
-    p1_lo, p1_hi = max(t_lo, seed_val + p1_band[0]), min(t_hi, seed_val + p1_band[1])
-    p0_mask = _band_mask(t, p0_lo, p0_hi)
-    p1_mask = _band_mask(t, p1_lo, p1_hi)
+    dt = float(np.median(np.diff(t))) if n > 1 else 1.0
 
-    # --- band‑adaptive P1 gates ---
-    def _p1_gates(mask: np.ndarray):
-        m = mask & np.isfinite(zf_z) & np.isfinite(plv_s)
-        z_in   = zf_z[m]
-        plv_in = plv_s[m]
-        z95 = float(np.nanpercentile(z_in, 95)) if z_in.size else 1.6
-        z92 = float(np.nanpercentile(z_in, 92)) if z_in.size else z95
-        z_dyn = 0.9 * min(z95, z92)
-        z_cap = float(getattr(params, 'z_p1_cap', 1.9))
-        z_eff = float(np.clip(getattr(params, 'z_p1', z_dyn), 1.2, z_cap))
-        q60   = float(np.nanpercentile(plv_in, 60)) if plv_in.size else float(np.nanmedian(plv_s))
-        plv_eff = float(np.clip(getattr(params, 'plv_p1', q60 - 0.01), 0.62, 0.86))
-        return z_eff, plv_eff
+    def _first_run(mask: np.ndarray, min_sec: float, start_idx: int = 0) -> Optional[Tuple[int, int]]:
+        """Return the first contiguous run of `True` values long enough in seconds."""
+        arr = np.asarray(mask, bool)
+        total = arr.size
+        if total == 0:
+            return None
+        min_len = max(1, int(np.ceil(min_sec / max(dt, 1e-6))))
+        i = max(0, int(start_idx))
+        if i >= total:
+            return None
+        while i < total:
+            if not arr[i]:
+                i += 1
+                continue
+            j = i
+            while j < total and arr[j]:
+                j += 1
+            if j - i >= min_len:
+                return i, j - 1
+            i = j
+        return None
 
-    z_p1_eff, plv_p1_eff = _p1_gates(p1_mask)
+    def _gauss_smooth(y: np.ndarray, sigma_sec: float = 0.5) -> np.ndarray:
+        if n < 3:
+            return y.astype(float)
+        sigma = max(sigma_sec / max(dt, 1e-6), 1.0)
+        radius = int(np.ceil(3 * sigma))
+        if radius <= 1:
+            return y.astype(float)
+        kernel_x = np.arange(-radius, radius + 1, dtype=float)
+        kernel = np.exp(-0.5 * (kernel_x / sigma) ** 2)
+        kernel /= kernel.sum()
+        padded = np.pad(y.astype(float), radius, mode='edge')
+        return np.convolve(padded, kernel, mode='same')[radius:-radius]
 
-    # --- rising checks ---
-    rz  = _rising_over_tau(zf_z,  t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03))
-    rpl = _rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008))
+    z_sr = _gauss_smooth(zf)
+    plv_s = _gauss_smooth(plv)
+    hsi_s = _gauss_smooth(hsi, 0.75)
+    dplv = _gauss_smooth(np.gradient(plv_s, t), 0.4)
+    abs_hsi = np.abs(hsi_s - np.nanmedian(hsi_s))
+    dhsi = _gauss_smooth(np.gradient(hsi_s, t), 0.4)
+    dabs_hsi = _gauss_smooth(np.gradient(abs_hsi, t), 0.4)
 
-    # ---------------- P0 ----------------
-    z_p0   = float(np.clip(getattr(params, 'z_p0', 0.6), 0.3, 1.2))
-    plv_p0 = getattr(params, 'plv_p0', np.nanmedian(plv_s))
-    m0 = (zf_z >= z_p0) & (plv_s >= plv_p0) & (hsi_s > getattr(params, 'hsi_broad', np.nanmedian(hsi_s))) & p0_mask
-    i0 = _first_onset(m0, t, getattr(params, 'min_p0_dur', 0.10))
-
-    # ---------------- P1 (two‑stage) ----------------
-    # Stage‑1: z‑led proto‑core (no PLV requirement yet)
-    proto = (zf_z >= z_p1_eff) & rz & ridge_ok & beta_ok & p1_mask
-
-    # ±150 ms dilation to allow PLV catch-up
-    dt  = float(np.median(np.diff(t)))
-    pad = max(1, int(round(0.15 / max(dt, 1e-6))))
-    proto_win = proto.copy()
-    for k in range(1, pad+1):
-        proto_win[:-k] |= proto[k:]
-        proto_win[k:]  |= proto[:-k]
-
-    core = proto_win & (plv_s >= plv_p1_eff) & p1_mask
-    core = _bridge(core, t, 0.02)
-    if i0 is not None:
-        core[:i0] = False
-
-    i1 = _first_onset(core, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
-
-    # widen‑retry if still missing: recompute gates in widened band
-    if i1 is None:
-        p1b = _band_mask(t, max(t_lo, p1_lo-1.0), min(t_hi, p1_hi+1.0))
-        z_p1_eff_b, plv_p1_eff_b = _p1_gates(p1b)
-        proto_b = (zf_z >= z_p1_eff_b) & rz & ridge_ok & beta_ok & p1b
-        proto_win_b = proto_b.copy()
-        for k in range(1, pad+1):
-            proto_win_b[:-k] |= proto_b[k:]
-            proto_win_b[k:]  |= proto_b[:-k]
-        core_b = proto_win_b & (plv_s >= plv_p1_eff_b) & p1b
-        core_b = _bridge(core_b, t, 0.02)
-        if i0 is not None:
-            core_b[:i0] = False
-        i1 = _first_onset(core_b, t, max(getattr(params, 'min_p1_dur', 0.12), dt))
-        if i1 is not None:
-            p1_mask, core = p1b, core_b
-            z_p1_eff, plv_p1_eff = z_p1_eff_b, plv_p1_eff_b
-
-    # ---------------- P2 (ΔHSI tightening + overtone support) ----------------
-    d_q = float(np.nanpercentile(dHSI, 15))
-    rel2 = (z_h2 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h2', 0.05)
-    rel3 = (z_h3 / (np.abs(zf) + 1e-9)) >= getattr(params, 'rel_h3', 0.05)
-
-    m2 = (dHSI <= d_q) & (rel2 | rel3)
+    bic_1 = np.zeros_like(z_sr)
+    bic_2 = np.zeros_like(z_sr)
     if bic_7_7_15 is not None:
-        m2 &= (np.asarray(bic_7_7_15, float) >= getattr(params, 'bic_7_7_15', 0.10))
+        bic_1 = _gauss_smooth(np.asarray(bic_7_7_15, float), 0.5)
     if bic_7_15_23 is not None:
-        m2 &= (np.asarray(bic_7_15_23, float) >= getattr(params, 'bic_7_15_23', 0.10))
-    if (pac_mvl is not None) and (getattr(params, 'pac_mvl', None) is not None):
-        m2 &= (np.asarray(pac_mvl, float) >= params.pac_mvl)
+        bic_2 = _gauss_smooth(np.asarray(bic_7_15_23, float), 0.5)
+    bic_max = np.nanmax(np.vstack([bic_1, bic_2]), axis=0)
 
-    if i1 is not None:
-        m2[:i1] = False
+    mvl = np.zeros_like(z_sr)
+    if pac_mvl is not None:
+        mvl = _gauss_smooth(np.asarray(pac_mvl, float), 0.75)
 
-    dur2 = getattr(params, 'min_p2_cycles', 1.0) / max(getattr(params, 'f0', 7.83), 1e-6)
-    i2 = _first_onset(m2, t, dur2)
-
-    # ---------------- P3 ----------------
-    i3 = None
-    if i2 is not None:
-        dz  = np.gradient(zf_z, t, edge_order=1)
-        dz2 = np.gradient(smooth_sec(t, z_h2, 0.20), t, edge_order=1)
-        dz3 = np.gradient(smooth_sec(t, z_h3, 0.20), t, edge_order=1)
-        release = (plv_s < getattr(params, 'plv_release', np.nanpercentile(plv_s, 50))) \
-                  | (dHSI > getattr(params, 'hsi_release', np.nanpercentile(dHSI, 60)))
-        faster  = (dz2 < dz) & (dz2 < 0) & (dz3 < dz) & (dz3 < 0)
-        k = max(1, getattr(params, 'rel_drop_k', 1))
-        if k > 1:
-            fk = faster.copy()
-            for j in range(1, k):
-                fk[:-j] &= faster[j:]
-            faster = fk
-        m3 = release & faster
-        m3[:i2] = False
-        m3 &= (t >= (t[i2] + 0.5))  # refractory
-        i3 = _first_onset(m3, t, 0.0)
-
-    # ---------------- debug prints ----------------
-    # if getattr(params, 'debug', False):
-    #     def _fmt(x): return 'None' if x is None else f"{x:.3f}"
-    #     g_z   = ((zf_z >= z_p1_eff) & p1_mask).mean()
-    #     g_plv = ((plv_s >= plv_p1_eff) & p1_mask).mean()
-    #     rz_b  = (_rising_over_tau(zf_z, t, getattr(params, 'z_rise_tau', 0.35), getattr(params, 'z_rise_eps', 0.03)) & p1_mask).mean()
-    #     rpl_b = (_rising_over_tau(plv_s, t, getattr(params, 'plv_rise_tau', 0.25), getattr(params, 'plv_rise_eps', 0.008)) & p1_mask).mean()
-    #     print(f"[ignite] seed={seed_val:.3f} | bands P0=({_fmt(p0_lo)},{_fmt(p0_hi)})  P1=({_fmt(p1_lo)},{_fmt(p1_hi)}) | z_p0={z_p0:.2f} z_p1={z_p1_eff:.2f}")
-    #     print(f"[ignite] P1 pass-rates  z>=z_p1:{g_z:.2f}  plv>=plv_p1:{g_plv:.2f}  rising_z:{rz_b:.2f}  rising_plv:{rpl_b:.2f}  band:{p1_mask.mean():.2f}")
-    #     # longest contiguous run in core
-    #     run = 0.0
-    #     if 'core' in locals() and core.any():
-    #         dt = float(np.median(np.diff(t)))
-    #         cnt, best = 0, 0
-    #         for v in core:
-    #             if v: cnt += 1; best = max(best, cnt)
-    #             else: cnt = 0
-    #         run = best * dt
-    #     P0t = None if i0 is None else float(t[i0])
-    #     P1t = None if i1 is None else float(t[i1])
-    #     P2t = None if i2 is None else float(t[i2])
-    #     P3t = None if i3 is None else float(t[i3])
-    #     print(f"[ignite] longest core run in band ≈ {run:.3f}s  (need ≥ {max(getattr(params,'min_p1_dur',0.12), float(np.median(np.diff(t)))):.3f}s)")
-    #     print(f"[ignite] calls  P0={_fmt(P0t)}  P1={_fmt(P1t)}  P2={_fmt(P2t)}  P3={_fmt(P3t)}")
-
-    def _pack(idx: Optional[int]) -> dict:
-        return {'idx': None if idx is None else int(idx), 'time': None if idx is None else float(t[idx])}
-
-    return {
-        'P0': _pack(i0), 'P1': _pack(i1), 'P2': _pack(i2), 'P3': _pack(i3),
-        'params': asdict(params) if params is not None else {},
-        'seed_t': float(seed_val),
-        'bands': {'P0': (float(p0_lo), float(p0_hi)), 'P1': (float(p1_lo), float(p1_hi))}
+    q = {
+        'z70': _np_percentile(z_sr, 70.0, 0.0),
+        'plv75': _np_percentile(plv_s, 75.0, 0.0),
+        'plv60': _np_percentile(plv_s, 60.0, 0.0),
+        'plv90': _np_percentile(plv_s, 90.0, 0.0),
+        'dplv80': _np_percentile(dplv, 80.0, 0.0),
+        'bic60': _np_percentile(bic_max, 60.0, 0.0),
+        'bic85': _np_percentile(bic_max, 85.0, 0.0),
+        'mvl85': _np_percentile(mvl, 85.0, 0.0),
+        'abs_hsi70': _np_percentile(abs_hsi, 70.0, 0.0),
+        'abs_hsi30': _np_percentile(abs_hsi, 30.0, 0.0),
     }
 
-def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float):
-    for name in ['P0','P1','P2','P3']:
-        node = phases.get(name, {})
-        t_on = node.get('time', None)
-        if t_on is None:
+    z_norm = _gauss_smooth(_winsor_robust_z(z_sr), 0.4)
+    plv_norm = _gauss_smooth(_winsor_robust_z(plv_s), 0.4)
+    bic_norm = _winsor_robust_z(bic_max)
+    mvl_norm = _winsor_robust_z(mvl)
+    score = (0.4 * z_norm + 0.3 * plv_norm + 0.2 * bic_norm + 0.1 * mvl_norm)
+    score = np.nan_to_num(score, nan=0.0)
+
+    score_thresh = _np_percentile(score, 85.0, 0.0)
+    candidate_idxs = [i for i in range(1, n-1) if score[i] >= score_thresh and score[i] >= score[i-1] and score[i] >= score[i+1]]
+    if not candidate_idxs:
+        candidate_idxs = [int(np.nanargmax(score))]
+    idx_core = max(candidate_idxs, key=lambda i: score[i])
+
+    search_radius = max(1, int(np.ceil(0.6 / max(dt, 1e-6))))
+    lo = max(0, idx_core - search_radius)
+    hi = min(n - 1, idx_core + search_radius)
+    idx_p2 = int(np.nanargmax(bic_max[lo:hi+1]) + lo)
+    p2 = {'time': float(t[idx_p2]), 'idx': idx_p2, 'confidence': 0.0, 'label': 'P2'}
+
+    plateau_thresh = q['plv60'] + 0.4 * max(0.0, q['plv75'] - q['plv60'])
+    min_p1_samples = max(1, int(np.ceil(0.75 / max(dt, 1e-6))))
+    idx_min = max(0, idx_p2 - int(np.ceil(2.0 / max(dt, 1e-6))))
+    mask_plateau = plv_s >= plateau_thresh
+    idx_p1 = None
+    i = min(idx_p2, n - 1)
+    while i >= idx_min:
+        if mask_plateau[i]:
+            j = i
+            while j >= idx_min and mask_plateau[j]:
+                j -= 1
+            start = j + 1
+            if i - start + 1 >= min_p1_samples:
+                idx_p1 = start
+                break
+            i = j
+        else:
+            i -= 1
+    if idx_p1 is None:
+        idx_p1 = int(np.nanargmax(plv_s[idx_min:idx_p2+1]) + idx_min)
+    p1 = {'time': float(t[idx_p1]), 'idx': idx_p1, 'confidence': 0.0, 'label': 'P1'}
+
+    mask_p0 = (z_sr >= q['z70']) & (dplv >= q['dplv80']) & (bic_max >= q['bic60'])
+    idx_min_p0 = max(0, idx_p1 - int(np.ceil(1.5 / max(dt, 1e-6))))
+    min_p0_samples = max(1, int(np.ceil(0.4 / max(dt, 1e-6))))
+    idx_p0 = None
+    i = idx_p1
+    while i >= idx_min_p0:
+        if mask_p0[i]:
+            j = i
+            while j >= idx_min_p0 and mask_p0[j]:
+                j -= 1
+            start = j + 1
+            if i - start + 1 >= min_p0_samples:
+                idx_p0 = start
+                break
+            i = j
+        else:
+            i -= 1
+    if idx_p0 is None:
+        search_end = idx_p1
+        search_start = max(0, search_end - int(np.ceil(1.5 / max(dt, 1e-6))))
+        fallback_slice = slice(search_start, search_end + 1)
+        combo = z_norm[fallback_slice] + plv_norm[fallback_slice] + bic_norm[fallback_slice]
+        rel_idx = int(np.nanargmax(combo)) if combo.size else 0
+        idx_p0 = search_start + rel_idx
+    p0 = {'time': float(t[idx_p0]), 'idx': idx_p0, 'confidence': 0.0, 'label': 'P0'}
+
+    horizon_p3 = int(np.ceil(2.5 / max(dt, 1e-6)))
+    idx_max_p3 = min(n - 1, idx_p2 + horizon_p3)
+    mv_mask = mvl >= q['mvl85']
+    idx_p3 = None
+    for i in range(idx_p2 + 1, idx_max_p3):
+        if mv_mask[i] and mvl[i] >= mvl[i-1] and mvl[i] >= mvl[i+1] and plv_s[i] >= q['plv60']:
+            idx_p3 = i
+            break
+    if idx_p3 is None:
+        segment = plv_s[idx_p2+1:idx_max_p3+1]
+        if segment.size and np.any(np.isfinite(segment)):
+            idx_p3 = int(np.nanargmax(segment) + idx_p2 + 1)
+        else:
+            idx_p3 = idx_max_p3
+    p3 = {'time': float(t[idx_p3]), 'idx': idx_p3, 'confidence': 0.0, 'label': 'P3'}
+
+    # Release (P4)
+    release_start = idx_p3
+    release_span = int(np.ceil(2.0 / max(dt, 1e-6)))
+    idx_max_p4 = min(n - 1, release_start + release_span)
+    release_thresh = q['plv60']
+    release_mask = (plv_s <= release_thresh) & (dhsi >= 0)
+    run_release = _first_run(release_mask, 0.5, release_start + 1)
+    if run_release:
+        idx_p4 = run_release[0]
+    else:
+        segment = plv_s[release_start+1:idx_max_p4+1]
+        if segment.size:
+            idx_p4 = int(np.nanargmin(segment) + release_start + 1)
+        else:
+            idx_p4 = idx_max_p4
+    p4 = {'time': float(t[idx_p4]), 'idx': idx_p4, 'confidence': 0.0, 'label': 'P4'}
+
+    window_start = float(t[0])
+    window_end = float(t[-1])
+    def _snap_event(ev: Dict[str, Any]):
+        time = ev.get('time')
+        if time is None:
+            return
+        if time < window_start or time > window_end:
+            clipped = float(np.clip(time, window_start, window_end))
+            idx = int(np.clip(np.searchsorted(t, clipped), 0, n - 1))
+            ev['idx'] = idx
+            ev['time'] = float(t[idx])
+
+    events = [p0, p1, p2, p3, p4]
+    for ev in events:
+        _snap_event(ev)
+
+    last_time = -np.inf
+    for ev in events:
+        time = ev['time']
+        if time is None:
             continue
-        ax.vlines(t_on, ymin, ymax, linestyles='--', linewidth=1.5,color='cyan')
-        ax.text(t_on, ymin, name, rotation=90, va='bottom', ha='center')
+        if time <= last_time:
+            time = min(window_end, last_time + max(dt, 0.05))
+            idx = int(np.clip(np.searchsorted(t, time), 0, n - 1))
+            ev['idx'] = idx
+            ev['time'] = float(t[idx])
+        last_time = ev['time']
+
+    p0['confidence'] = _sigmoid((
+        _robust_z(z_sr, p0['idx']) +
+        _robust_z(dplv, p0['idx']) +
+        _robust_z(bic_max, p0['idx'])
+    ) / 3.0)
+
+    tightening_penalty = 0.5 if abs_hsi[p1['idx']] < q['abs_hsi30'] else 0.0
+    p1['confidence'] = _sigmoid(_robust_z(plv_s, p1['idx']) - tightening_penalty)
+
+    p2['confidence'] = _sigmoid((
+        _robust_z(bic_max, p2['idx']) +
+        _robust_z(abs_hsi, p2['idx']) - 0.5 * abs(_robust_z(dabs_hsi, p2['idx']))
+    ) / 2.0)
+
+    p3['confidence'] = _sigmoid((
+        _robust_z(mvl, p3['idx']) +
+        _robust_z(plv_s, p3['idx'])
+    ) / 2.0)
+
+    p4['confidence'] = _sigmoid((
+        -_robust_z(plv_s, p4['idx']) +
+        _robust_z(dhsi, p4['idx'])
+    ) / 2.0)
+
+    event_type = 'undefined'
+    if p1['time'] is None and p2['time'] is not None and p3['time'] is not None:
+        event_type = 'two-phase'
+    elif p1['idx'] is not None:
+        tightening = hsi_s[p1['idx']] - np.nanmedian(hsi_s)
+        event_type = 'fundamental-led' if tightening <= 0 else 'overtone-led'
+
+    summary = {
+        'P0': p0,
+        'P1': p1,
+        'P2': p2,
+        'P3': p3,
+        'P4': p4,
+        'type': event_type,
+        'confidence_mean': float(np.nanmean([p0['confidence'], p1['confidence'], p2['confidence'], p3['confidence'], p4['confidence']]))
+    }
+
+    if not return_debug:
+        return summary
+
+    debug = {
+        't': t,
+        'z_sr': z_sr,
+        'plv_s': plv_s,
+        'dplv': dplv,
+        'hsi_s': hsi_s,
+        'dhsi': dhsi,
+        'bic_max': bic_max,
+        'mvl': mvl,
+        'abs_hsi': abs_hsi,
+        'thresholds': {**q, 'release_plv': release_thresh},
+        'score': score,
+        'events': summary,
+    }
+    return summary, debug
+
+def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float,
+                    *, highlight_padding: float = 0.25) -> None:
+    colors = {
+        'P0': '#00BCD4',
+        'P1': '#4CAF50',
+        'P2': '#FFC107',
+        'P3': '#F44336',
+        'P4': '#9E9E9E',
+    }
+
+    def _get_event(name: str) -> Dict[str, Any]:
+        ev = phases.get(name, {})
+        return ev if isinstance(ev, dict) else {}
+
+    p0 = _get_event('P0')
+    p4_ev = _get_event('P4')
+    endpoint = p4_ev if p4_ev.get('time') is not None else _get_event('P3')
+    if p0.get('time') is not None and endpoint.get('time') is not None and endpoint['time'] > p0['time']:
+        mean_conf = np.nanmean([p0.get('confidence', 0.5), endpoint.get('confidence', 0.5)])
+        pad = highlight_padding + (1.0 - float(mean_conf)) * 0.4
+        start = float(p0['time']) - pad
+        end = float(endpoint['time']) + pad
+        ax.axvspan(start, end, color='#FFF59D33', lw=0)
+        ax.text((start + end) * 0.5, ymax + 0.02 * (ymax - ymin), 'Ignition',
+                ha='center', va='bottom', fontsize=8, color='#424242')
+
+    for name in ['P0', 'P1', 'P2', 'P3', 'P4']:
+        ev = _get_event(name)
+        time = ev.get('time')
+        if time is None:
+            continue
+        conf = float(ev.get('confidence', 0.0))
+        if not np.isfinite(conf):
+            conf = 0.0
+        color = colors.get(name, 'cyan')
+        half_width = 0.4 + (1.0 - conf) * 0.6
+        ax.axvspan(time - half_width, time + half_width, color=color, alpha=0.08, lw=0)
+        ax.vlines(time, ymin, ymax, linestyles='--', linewidth=1.3, color=color,
+                  alpha=0.7 + 0.3 * min(1.0, conf))
+        ax.text(time, ymin, name, rotation=90, va='bottom', ha='center', color=color, fontsize=8)
+        if conf < 0.45:
+            ax.text(time, ymax, f"{conf:.2f}", rotation=90, va='top', ha='center',
+                    color=color, fontsize=7, alpha=0.6)
 
 
-def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg):
+def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
     assert electrodes and len(electrodes) > 0, "electrodes cannot be empty"
     
     # --- parameters ------------------------------------------------------------
     TIME_COL = "Timestamp"
     FS = 128.0
-    # PACK_WIN   = 6     # sliding features
-    # PACK_STEP  = 0.15
-    
-    # SPEC_WIN   = 1.5      # per-window spectrogram for HSI_v3
-    # SPEC_OVERLAP =0.8
-    
-    # SPEC_WIN_FINE = 1.5         # try 4.0, 6.0, or 8.0 s
-    # SPEC_OVL_FINE = 0.8         # high overlap for smoother time axis
-    
-
-    # cfg= FeaturePackCfg(
-    #     channels=electrodes, time_col='Timestamp', fs=FS,
-    #     win_sec=PACK_WIN, step_sec=PACK_STEP,
-    #     sr_centers=ladder[:3],
-    #     ladder=ladder,
-    #     bw_hz=0.5,
-    # )
     
     # BUILD PACK
     pack = build_ignition_feature_pack(records,ign_win,cfg=cfg)
@@ -1367,7 +1560,7 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg):
     pack['plv_7p83'] = np.interp(pack['t'], t0 + t_plv, plv, left=plv[0], right=plv[-1])
 
     # PAC MVL
-    t_pac, mvl = _pac_mvl_timecourse(X, fs=128.0,theta_band=(cfg.sr_centers[0]-0.35,cfg.sr_centers[0]+0.35), gamma_band=(40,60),
+    t_pac, mvl = _pac_mvl_timecourse(X, fs=128.0,theta_band=(cfg.sr_centers[0]-1,cfg.sr_centers[0]+1), gamma_band=(30,60),
                                             win_sec=cfg.win_sec, step_sec=cfg.step_sec,amp_gate_pct=70)
     pack['pac_mvl'] = np.interp(pack['t'], t0+t_pac, mvl, left=mvl[0], right=mvl[-1])
 
@@ -1427,14 +1620,13 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg):
         electrodes,
         params=params,
         hsi_plot_mode="delta", hsi_ylim=("pct",(1,99)),
-        seed_t="center", 
-        # p0_band=(-10,+0.5), 
-        # p1_band=(-10,+1.5), 
+        seed_t="center",
         p0_band=(-2,+0.6),                      # seconds relative to seed_t
         p1_band=(-1, +1.4),                      # seconds relative to seed_t
         pad_s=2.0,
         title=f"Ignition {ign_win[0]}–{ign_win[1]}s",
-        centers=ladder[:3]
+        centers=ladder[:3],
+        session_name=session_name
     )
 
 
