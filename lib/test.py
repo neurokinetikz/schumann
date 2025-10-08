@@ -1045,6 +1045,7 @@ def compute_session_spectrogram(
     t_abs = t0 + t_rel
 
     return (t_abs, fB, S_medB)
+ 
 
 def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[float,float]], *, 
                                 cfg: FeaturePackCfg = FeaturePackCfg()) -> Dict[str, np.ndarray]:
@@ -1069,7 +1070,6 @@ def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[floa
 
     t = t_all[mask]                                   # segment time base
     X = _get_matrix(_records, channels)[:, mask]
-
 
     # Fundamental & harmonics envelopes (median across channels)
     z1, ph1 = _narrowband_envelope_z(X, fs, cfg.sr_centers[0], cfg.bw_hz)

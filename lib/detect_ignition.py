@@ -75,6 +75,18 @@ def bandpass_safe(x: np.ndarray, fs: float, f1: float, f2: float, order=4) -> np
     b,a = signal.butter(order, [f1/ny, f2/ny], btype='band')
     return signal.filtfilt(b,a,x,axis=-1)
 
+
+def _scalar_bandwidth(val, default: float = 0.5) -> float:
+    if val is None:
+        return float(default)
+    arr = np.atleast_1d(val)
+    if arr.size == 0:
+        return float(default)
+    try:
+        return float(arr.flat[0])
+    except (TypeError, ValueError):
+        return float(default)
+
 # --- MSC helper (time-resolved coherence at f0) ---
 
 def _msc_f0_series(x: np.ndarray, y: np.ndarray, fs: float, f0: float, win: float = 1.0, step: float = 0.1) -> np.ndarray:
@@ -278,6 +290,8 @@ def detect_ignitions_session(
     _ensure_dir(out_dir)
     time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
     fs = infer_fs(RECORDZ, time_col)
+    half_bw = _scalar_bandwidth(half_bw_hz, default=0.5)
+    half_bw_hz = half_bw
     t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
 
     # --- 1) SR envelope z(t) & onsets (proposal via all eeg_channels) ---
@@ -346,11 +360,28 @@ def detect_ignitions_session(
     else:
         harmonic_centers = [k*center_hz for k in harmonics]
 
+    if harmonic_bw_hz is None:
+        harmonic_bw_list = [half_bw] * len(harmonic_centers)
+    else:
+        hb_arr = np.atleast_1d(harmonic_bw_hz)
+        if hb_arr.size == 1:
+            harmonic_bw_list = [float(hb_arr.flat[0])] * len(harmonic_centers)
+        else:
+            if hb_arr.size != len(harmonic_centers):
+                raise ValueError("harmonic_bw_hz must match harmonic centers length")
+            harmonic_bw_list = [float(x) for x in hb_arr]
+
     # per-session valid harmonics (below Nyquist with small margin)
-    valid_harmonics = [f0 for f0 in harmonic_centers if (f0 + (harmonic_bw_hz or half_bw_hz)) < (fs/2.0 - 1e-3)]
-    if not valid_harmonics:
-        valid_harmonics = [2*center_hz]
-    hbw = harmonic_bw_hz if harmonic_bw_hz is not None else half_bw_hz
+    valid_pairs = [
+        (f0, bw)
+        for f0, bw in zip(harmonic_centers, harmonic_bw_list)
+        if (f0 + bw) < (fs/2.0 - 1e-3)
+    ]
+    if not valid_pairs:
+        valid_pairs = [(2 * center_hz, half_bw)]
+    valid_harmonics = [f for f, _ in valid_pairs]
+    valid_bandwidths = [bw for _, bw in valid_pairs]
+    hbw = valid_bandwidths[0] if valid_bandwidths else half_bw
 
     # --- Determine base guess from custom list (if provided) ---
     if harmonics_hz and len(harmonics_hz) and any(f < 10.0 for f in harmonics_hz):
@@ -363,7 +394,8 @@ def detect_ignitions_session(
     valid_harmonics_ot = [f0 for f0 in valid_harmonics if abs(f0 - base_guess) > (base_margin + 1e-6)]
     if not valid_harmonics_ot:
         # fallback: if user list only had base, synthesize multiples below Nyquist
-        valid_harmonics_ot = [k*center_hz for k in (2,3,4,5,6,7) if (k*center_hz + hbw) < (fs/2.0 - 1e-3)]
+        hbw_global = max(valid_bandwidths) if valid_bandwidths else hbw
+        valid_harmonics_ot = [k*center_hz for k in (2,3,4,5,6,7) if (k*center_hz + hbw_global) < (fs/2.0 - 1e-3)]
 
     # clamp gamma band to Nyquist
     g_lo, g_hi = pel_band
@@ -454,18 +486,26 @@ def detect_ignitions_session(
         i0p = max(0, int(round((t0_net-2.0)*fs)))
         i1p = min(len(v_sr), int(round((t0_net+2.0)*fs)))
         seg = v_sr[i0p:i1p]
-        if seg.size > 10:
-            th = bandpass_safe(seg, fs, ignition_freqs[0]-0.3, ignition_freqs[0]+0.3)
-            ga = bandpass_safe(seg, fs, gamma_band[0], gamma_band[1])
-            env_th = np.abs(signal.hilbert(th))
-            env_ga = np.abs(signal.hilbert(ga))
-            tt = np.arange(seg.size)/fs + (t0_net-2.0)
-            k0 = np.argmin(np.abs(tt - t0_net))
-            p_th = np.argmax(env_th[:k0]) if k0>0 else 0
-            p_ga = np.argmax(env_ga[:k0]) if k0>0 else 0
-            PEL = float(tt[p_th] - tt[p_ga])
-        else:
-            PEL = np.nan
+        # pac_mvl = np.nan
+        # if seg.size > 10:
+        #     th = bandpass_safe(seg, fs, ignition_freqs[0]-0.3, ignition_freqs[0]+0.3)
+        #     ga = bandpass_safe(seg, fs, gamma_band[0], gamma_band[1])
+        #     env_th = np.abs(signal.hilbert(th))
+        #     env_ga = np.abs(signal.hilbert(ga))
+        #     tt = np.arange(seg.size)/fs + (t0_net-2.0)
+        #     k0 = np.argmin(np.abs(tt - t0_net))
+        #     p_th = np.argmax(env_th[:k0]) if k0>0 else 0
+        #     p_ga = np.argmax(env_ga[:k0]) if k0>0 else 0
+        #     PEL = float(tt[p_th] - tt[p_ga])
+        #     try:
+        #         phase_th = np.angle(signal.hilbert(th))
+        #         amp_ga = np.abs(signal.hilbert(ga))
+        #         pac_mvl = float(np.abs(np.mean(amp_ga * np.exp(1j * phase_th))) /
+        #                          (np.mean(amp_ga) + 1e-12))
+        #     except Exception:
+        #         pac_mvl = np.nan
+        # else:
+        #     PEL = np.nan
 
         # FS metrics from v_sr around t0_net
         v_f = bandpass_safe(v_sr, fs, f_lo, f_hi)
@@ -521,6 +561,17 @@ def detect_ignitions_session(
         else:
             sr_z_max = sr_z_peak_t = sr_z_mean_pm5 = sr_z_mean_post5 = np.nan
 
+        # PLV around ignition (±5 s) in fundamental band
+        try:
+            Xw_band = bandpass_safe(Xw, fs, ignition_freqs[0] - hbw, ignition_freqs[0] + hbw)
+            phases = np.angle(signal.hilbert(Xw_band, axis=-1))
+            plv_inst = np.abs(np.nanmean(np.exp(1j * phases), axis=0))
+            t_event = t[i0:i1]
+            plv_mask = (t_event >= (t0_net - 5.0)) & (t_event <= (t0_net + 5.0))
+            plv_mean_pm5 = float(np.nanmean(plv_inst[plv_mask])) if np.any(plv_mask) else np.nan
+        except Exception:
+            plv_mean_pm5 = np.nan
+
         # label
         if (fs_z >= 3.0) and (HSI >= 0.2):
             type_label = 'fundamental-led'
@@ -543,6 +594,8 @@ def detect_ignitions_session(
             # 'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
             'sr_z_max': sr_z_max, 'sr_z_peak_t': sr_z_peak_t,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
+            # 'pac_mvl': pac_mvl,
+            'plv_mean_pm5': plv_mean_pm5,
             'type_label': type_label, 'session_name': session_name, 'base_est_hz': base_est_hz, 
             'sr1': f"{ignition_freqs[0]:.2f}", 
             'sr2': f"{ignition_freqs[1]:.2f}", 
@@ -627,6 +680,8 @@ def detect_ignitions_session(
             dur   = events['duration_s'].to_numpy()
             srmax = events['sr_z_max'].to_numpy()
             srpm5 = events['sr_z_mean_pm5'].to_numpy()
+            plvpm5 = events['plv_mean_pm5'].to_numpy() if 'plv_mean_pm5' in events.columns else np.array([])
+            # pacv   = events['pac_mvl'].to_numpy() if 'pac_mvl' in events.columns else np.array([])
             msc_v  = events['msc_7p83_v'].to_numpy()  if 'msc_7p83_v'  in events.columns else np.array([])
             msc_pk = events['msc_7p83_v_peak'].to_numpy() if 'msc_7p83_v_peak' in events.columns else np.array([])
             # msc_sr = events['msc_7p83_sr'].to_numpy() if 'msc_7p83_sr' in events.columns else np.array([])
@@ -642,14 +697,23 @@ def detect_ignitions_session(
             seed_counts = events['seed_roi'].value_counts(dropna=True)
             type_counts = events['type_label'].value_counts(dropna=True)
 
-            score = srmax * msc_v / (1+HSIv)
+            sr_score = srmax * msc_v * plvpm5 / (1+HSIv)
+            t_score = 1.0 + (2.0 - 1.0) * (1.0 - np.exp(-(dur - 20.0)/35.0))
+            score = sr_score * t_score
+
+            events['sr_score'] = sr_score
+            events['t_score'] = t_score
             events['score'] = score
 
             print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
             print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
             print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
-            print(f"  MSC@~7.8 Hz (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
+            print(f"  PLV mean (±5 s)        — median [IQR]: {fmt_iqr(plvpm5)}")
+            print(f"  MSC@~7.8 Hz (virtual)  — median [IQR]: {fmt_iqr(msc_v)}")
+            # print(f"  PAC MVL (θ–γ)          — median [IQR]: {fmt_iqr(pacv)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
+            print(f"  SR-Score               — median [IQR]: {fmt_iqr(sr_score)}")
+            print(f"  T-Score                — median [IQR]: {fmt_iqr(t_score)}")
             print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
             print(f"  Coverage of recording  — {rec_cov:.2f}%")
             
@@ -664,9 +728,9 @@ def detect_ignitions_session(
             # Top tables (SR z, FS z, HSI)
             try:
                 top_by_srz = events.sort_values('score', ascending=False)
-                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v',
-                                        'HSI','fs_z','type_label','seed_roi','seed_ch','sr1','sr2','sr3','sr4','score'] if c in events.columns]
-                print("\nTop events by Score (sr_z_max * msc_7p83_v / (1 + HSI):")
+                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v','plv_mean_pm5','HSI',
+                                        'fs_z','type_label','seed_roi','seed_ch','sr1','sr2','sr3','sr4','sr_score','t_score','score'] if c in events.columns]
+                print("\nTop events by Score (sr_z_max * msc_7p83_v * plv_mean_pm5 * t_score / (1 + HSI):")
                 print(top_by_srz[cols2].to_string(index=False, justify='center'))
             except Exception:
                 pass

@@ -1373,7 +1373,6 @@ def _get_channel_array(records, channels):
 
 
 
-
 def estimate_session_sr_harmonics(records, electrodes, fs, canonical_harmonics=[7.8, 14.1, 20.3, 26.4], search_band=0.5):
     """
     Estimate average Schumann Resonance (SR) frequencies for canonical harmonic values across an EEG session.
