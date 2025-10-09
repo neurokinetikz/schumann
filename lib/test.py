@@ -470,6 +470,240 @@ def _bridge(mask: np.ndarray, t: np.ndarray, bridge_sec: float = 0.02) -> np.nda
         er &= (box >= win)
     return er
 
+
+def _spectral_slope_series(t_spec: np.ndarray, f_spec: np.ndarray, Sxx: np.ndarray,
+                           band: Tuple[float, float] = (3.0, 45.0),
+                           exclude_centers: Optional[Sequence[float]] = None,
+                           exclude_bw: float = 0.6) -> Tuple[np.ndarray, np.ndarray]:
+    f_spec = np.asarray(f_spec, float)
+    mask = (f_spec >= band[0]) & (f_spec <= band[1])
+    if exclude_centers:
+        for center in exclude_centers:
+            mask &= ~((f_spec >= center - exclude_bw) & (f_spec <= center + exclude_bw))
+    if not np.any(mask):
+        return t_spec, np.full(Sxx.shape[1], np.nan)
+    x = np.log10(f_spec[mask] + 1e-12)
+    slopes = []
+    for col in range(Sxx.shape[1]):
+        y = 10 * np.log10(Sxx[mask, col] + 1e-20)
+        if not np.any(np.isfinite(y)):
+            slopes.append(np.nan)
+            continue
+        y = np.nan_to_num(y, nan=np.nanmedian(y[np.isfinite(y)]))
+        slope, _ = np.polyfit(x, y, 1)
+        slopes.append(float(slope))
+    return t_spec, np.asarray(slopes)
+
+
+def _avalanche_size_duration(signal: np.ndarray, t: np.ndarray, thresh: float,
+                             bridge_sec: float = 0.15) -> Tuple[np.ndarray, np.ndarray]:
+    signal = np.asarray(signal, float)
+    mask = signal >= thresh
+    if bridge_sec and bridge_sec > 0:
+        mask = _bridge(mask, t, bridge_sec)
+    sizes, durations = [], []
+    dt = float(np.median(np.diff(t))) if t.size > 1 else 1.0
+    i = 0
+    while i < mask.size:
+        if not mask[i]:
+            i += 1
+            continue
+        j = i
+        while j < mask.size and mask[j]:
+            j += 1
+        segment = signal[i:j]
+        duration = max((j - i) * dt, dt)
+        size = float(np.trapz(np.maximum(segment - thresh, 0.0), dx=dt))
+        sizes.append(max(size, 1e-6))
+        durations.append(duration)
+        i = j
+    return np.asarray(sizes), np.asarray(durations)
+
+
+def _kuramoto_order_series(X: np.ndarray, fs: float, center_hz: float, bw: float) -> Tuple[np.ndarray, np.ndarray]:
+    b = _fir_bandpass(center_hz, bw, fs)
+    Xb = filtfilt(b, [1.0], X, axis=-1, padlen=min(2400, X.shape[-1]-1))
+    phases = np.angle(hilbert(Xb, axis=-1))
+    order = np.abs(np.nanmean(np.exp(1j * phases), axis=0))
+    t = np.arange(order.size) / fs
+    return t, order.astype(float)
+
+
+def _msc_channel_to_reference(ch_signal: np.ndarray, ref_signal: np.ndarray) -> float:
+    z_ch = hilbert(ch_signal)
+    z_ref = hilbert(ref_signal)
+    num = np.abs(np.mean(z_ch * np.conj(z_ref))) ** 2
+    den = (np.mean(np.abs(z_ch) ** 2) * np.mean(np.abs(z_ref) ** 2)) + 1e-12
+    return float(num / den)
+
+
+def _msc_matrix(X: np.ndarray, fs: float, freqs: Sequence[float], bw: float,
+                n_surrogates: int = 20, seed: int = 0) -> Tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    n_ch = X.shape[0]
+    msc = np.zeros((len(freqs), n_ch))
+    null95 = np.zeros((len(freqs), n_ch))
+    ref = np.nanmedian(X, axis=0)
+    for fi, f0 in enumerate(freqs):
+        b = _fir_bandpass(f0, bw, fs)
+        Xf = filtfilt(b, [1.0], X, axis=1, padlen=min(2400, X.shape[-1]-1))
+        ref_f = filtfilt(b, [1.0], ref, axis=0, padlen=min(2400, ref.size-1))
+        for ci in range(n_ch):
+            ch = Xf[ci]
+            m_val = _msc_channel_to_reference(ch, ref_f)
+            msc[fi, ci] = m_val
+            surrogates = []
+            for _ in range(n_surrogates):
+                shift = rng.integers(0, ref_f.size)
+                ref_shift = np.roll(ref_f, shift)
+                surrogates.append(_msc_channel_to_reference(ch, ref_shift))
+            null95[fi, ci] = float(np.nanpercentile(surrogates, 95))
+    return msc, null95
+
+
+def _transfer_entropy_proxy(theta_env: np.ndarray, gamma_env: np.ndarray, fs: float,
+                             lead_sec: float = 0.1, win_sec: float = 2.0,
+                             step_sec: float = 0.25) -> Tuple[np.ndarray, np.ndarray]:
+    theta_env = np.asarray(theta_env, float)
+    gamma_env = np.asarray(gamma_env, float)
+    lead = max(1, int(round(lead_sec * fs)))
+    win = max(2, int(round(win_sec * fs)))
+    step = max(1, int(round(step_sec * fs)))
+    if theta_env.size <= lead + win or gamma_env.size <= lead + win:
+        return np.array([]), np.array([])
+    values, times = [], []
+    for start in range(0, theta_env.size - lead - win + 1, step):
+        theta = theta_env[start:start+win]
+        gamma_future = gamma_env[start+lead:start+lead+win]
+        gamma_past = gamma_env[start:start+win]
+        if np.nanstd(theta) < 1e-9 or np.nanstd(gamma_future) < 1e-9 or np.nanstd(gamma_past) < 1e-9:
+            values.append(np.nan)
+        else:
+            cc_future = np.corrcoef(theta, gamma_future)[0, 1]
+            cc_past = np.corrcoef(gamma_past, gamma_future)[0, 1]
+            values.append((cc_future ** 2) - (cc_past ** 2))
+        times.append((start + win / 2) / fs)
+    return np.asarray(times), np.asarray(values)
+
+
+def _sample_entropy(signal: np.ndarray, m: int = 2, r: float = 0.2) -> float:
+    signal = np.asarray(signal, float)
+    n = signal.size
+    if n < m + 2:
+        return np.nan
+    r *= np.nanstd(signal) + 1e-12
+    def _phi(mm: int) -> float:
+        count = 0
+        total = 0
+        for i in range(n - mm):
+            template = signal[i:i+mm]
+            diffs = np.max(np.abs(signal[i+1:] - template[:, None]), axis=0)
+            count += np.sum(diffs <= r)
+            total += n - mm - i - 1
+        return (count / max(total, 1)) if total else 0.0
+    phi_m = _phi(m)
+    phi_m1 = _phi(m + 1)
+    if phi_m <= 0 or phi_m1 <= 0:
+        return np.nan
+    return -np.log(phi_m1 / phi_m)
+
+
+def _complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, step_sec: float) -> Tuple[np.ndarray, np.ndarray]:
+    signal = np.asarray(signal, float)
+    t = np.asarray(t, float)
+    if t.size < 2:
+        return np.array([]), np.array([])
+    fs = 1.0 / max(np.median(np.diff(t)), 1e-6)
+    w = max(2, int(round(win_sec * fs)))
+    s = max(1, int(round(step_sec * fs)))
+    ent, times = [], []
+    for start in range(0, signal.size - w + 1, s):
+        seg = signal[start:start+w]
+        ent.append(_sample_entropy(seg))
+        times.append(t[start + w//2])
+    return np.asarray(times), np.asarray(ent)
+
+
+def _hurst_exponent(signal: np.ndarray, scales: Sequence[int]) -> Tuple[np.ndarray, np.ndarray, float]:
+    signal = np.asarray(signal, float)
+    rms = []
+    scales = np.asarray(list(scales), int)
+    for scale in scales:
+        if scale <= 1 or scale >= signal.size:
+            rms.append(np.nan)
+            continue
+        cut = signal[:signal.size - signal.size % scale]
+        if cut.size == 0:
+            rms.append(np.nan)
+            continue
+        segments = cut.reshape(-1, scale)
+        rms_scale = np.mean(np.std(segments, axis=1, ddof=1))
+        rms.append(rms_scale)
+    rms = np.asarray(rms, float)
+    valid = np.isfinite(rms)
+    if valid.sum() < 2:
+        return scales.astype(float), rms, np.nan
+    x = np.log10(scales[valid].astype(float))
+    y = np.log10(rms[valid] + 1e-12)
+    hurst, _ = np.polyfit(x, y, 1)
+    return scales.astype(float), rms, float(hurst)
+
+
+def _lempel_ziv_complexity(signal: np.ndarray) -> float:
+    signal = np.asarray(signal, float)
+    n = signal.size
+    if n < 16:
+        return np.nan
+    med = np.nanmedian(signal)
+    if not np.isfinite(med):
+        return np.nan
+    binary = (signal > med).astype(int)
+    s = ''.join(binary.astype(str))
+    i = 0
+    k = 1
+    c = 1
+    while True:
+        if i + k >= len(s):
+            c += 1
+            break
+        segment = s[i:i+k]
+        if segment in s[:i]:
+            k += 1
+        else:
+            c += 1
+            i += k
+            if i >= len(s):
+                break
+            k = 1
+    return c / (n / np.log2(max(n, 2)))
+
+
+def _lz_complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, step_sec: float) -> Tuple[np.ndarray, np.ndarray]:
+    signal = np.asarray(signal, float)
+    t = np.asarray(t, float)
+    if t.size < 2:
+        return np.array([]), np.array([])
+    fs = 1.0 / max(np.median(np.diff(t)), 1e-6)
+    w = max(16, int(round(win_sec * fs)))
+    s = max(1, int(round(step_sec * fs)))
+    values, times = [], []
+    for start in range(0, signal.size - w + 1, s):
+        seg = signal[start:start+w]
+        values.append(_lempel_ziv_complexity(seg))
+        times.append(t[start + w//2])
+    return np.asarray(times), np.asarray(values)
+
+
+def _baseline_slice(records: pd.DataFrame, time_col: str, window: Tuple[float, float],
+                    offset: float, duration: float) -> Tuple[np.ndarray, np.ndarray]:
+    if offset <= 0 or duration <= 0:
+        return np.array([]), np.array([])
+    t = np.asarray(records[time_col], float)
+    start = max(window[0] - offset - duration, t[0])
+    end = max(window[0] - offset, start + duration)
+    mask = (t >= start) & (t <= end)
+    return t[mask], mask
+
 def piano_roll_from_spec(spec_by_window, *, harmonics=(7.8, 14.3, 20.8), bw=0.6):
     """
     spec_by_window: (tW, fW, SW) from your per-window spectrogram
@@ -1667,3 +1901,316 @@ def estimate_sr_peaks(records, fs, ign_win, session_harmonics, search_band=0.5):
         else:
             detected_freqs.append(None)
     return detected_freqs
+
+
+def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
+    assert electrodes, "electrodes cannot be empty"
+
+    TIME_COL = 'Timestamp'
+    FS = cfg.fs or _infer_fs(records, TIME_COL)
+    X_full = _get_matrix(records, electrodes)
+    t_all = np.asarray(records[TIME_COL], float)
+
+    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    pack.setdefault('spec', compute_session_spectrogram(
+        records, channels=electrodes, time_col=TIME_COL, fs=FS,
+        band=(2, 60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+    ))
+
+    provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
+    t = provider.t()
+    zf = provider.z_fund()
+    z2 = provider.z_h2()
+    z3 = provider.z_h3()
+    plv = provider.plv_fund()
+    hsi = provider.hsi()
+
+    zf_z = smooth_sec(t, robust_z(np.asarray(zf, float)), 0.15)
+    plv_z = smooth_sec(t, robust_z(np.asarray(plv, float)), 0.15)
+    hsi_delta = hsi - np.nanmedian(hsi)
+
+    dt = float(np.median(np.diff(t))) if t.size > 1 else 1/FS
+
+    centers = ladder[:4] if len(ladder) >= 4 else ladder
+    bw_arr = np.atleast_1d(cfg.bw_hz if cfg.bw_hz is not None else 0.5)
+    bw0 = float(bw_arr[0])
+
+    spec = provider.spectrogram_for_window(t.min(), t.max())
+    if spec is None:
+        spec = pack['spec']
+    t_spec, f_spec, S_spec = _slice_spec_to_window(spec, (t.min(), t.max()), min_cols=20)
+    _, slopes = _spectral_slope_series(t_spec, f_spec, S_spec)
+
+    thresh_z = np.nanpercentile(zf_z, 60.0)
+    sizes, durations = _avalanche_size_duration(zf_z, t, thresh_z, bridge_sec=0.30)
+
+    mask_seg = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
+    X = X_full[:, mask_seg]
+    t_seg = t_all[mask_seg]
+    t_R, R_series = _kuramoto_order_series(X, FS, centers[0], bw0)
+    t_R = t_R + ign_win[0]
+
+    theta_b = _fir_bandpass(centers[0], bw0, FS)
+    theta_filt = filtfilt(theta_b, [1.0], X, axis=1, padlen=min(2400, X.shape[-1]-1))
+    theta_env = np.abs(hilbert(theta_filt, axis=-1))
+    theta_env = np.nanmedian(theta_env, axis=0)
+    gamma_b = firwin(801, [30.0, 60.0], pass_zero=False, fs=FS)
+    gamma_filt = filtfilt(gamma_b, [1.0], X, axis=1, padlen=min(2400, X.shape[-1]-1))
+    gamma_env = np.abs(hilbert(gamma_filt, axis=-1))
+    gamma_env = np.nanmedian(gamma_env, axis=0)
+    te_t, te_series = _transfer_entropy_proxy(theta_env, gamma_env, FS,
+                                              lead_sec=0.1, win_sec=1.0, step_sec=0.1)
+    if te_series.size:
+        te_series = smooth_sec(te_t, te_series, 0.3)
+    te_t = te_t + ign_win[0]
+
+    params = PhaseParams()
+    params.f0 = centers[0]
+    phases = _detect_ignition_phases(
+        t, zf_z, plv, hsi, z2, z3,
+        params=params,
+        seed_t='center',
+        p0_band=(-2.0, +0.6),
+        p1_band=(-1.0, +1.4),
+        pad_s=2.0,
+    )
+
+    baseline_offset = 60.0
+    baseline_duration = max(ign_win[1] - ign_win[0], 5.0)
+    t_base, mask_base = _baseline_slice(records, TIME_COL, ign_win, baseline_offset, baseline_duration)
+    sizes_base = durations_base = np.array([])
+    slopes_base = np.array([])
+    R_base_series = np.array([])
+    t_R_base = np.array([])
+    var_base = np.array([])
+    if mask_base.size and np.sum(mask_base) > 5:
+        baseline_window = (float(t_base[0]), float(t_base[-1]))
+        tWb, fWb, SWb = window_spec_median(
+            records, baseline_window, channels=electrodes, fs=FS,
+            time_col=TIME_COL, band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+        )
+        tWb = tWb + cfg.spec_win/2.0
+        _, slopes_base = _spectral_slope_series(tWb, fWb, SWb)
+
+        X_base = X_full[:, mask_base]
+        z_base, _ = _narrowband_envelope_z(X_base, FS, centers[0], bw0)
+        z2_base = z3_base = z4_base = None
+        if len(centers) > 1:
+            z2_base, _ = _narrowband_envelope_z(X_base, FS, centers[1], bw0)
+        if len(centers) > 2:
+            z3_base, _ = _narrowband_envelope_z(X_base, FS, centers[2], bw0)
+        if len(centers) > 3:
+            z4_base, _ = _narrowband_envelope_z(X_base, FS, centers[3], bw0)
+        z_base_z = smooth_sec(t_base, robust_z(np.asarray(z_base, float)), 0.15)
+        sizes_base, durations_base = _avalanche_size_duration(z_base_z, t_base, thresh_z, bridge_sec=0.30)
+
+        t_R_base, R_base_series = _kuramoto_order_series(X_base, FS, centers[0], bw0)
+        t_R_base = t_R_base + baseline_window[0]
+
+        env_base = smooth_sec(t_base, np.asarray(z_base, float)**2, 0.3)
+        var_base = np.clip(np.interp(t_R_base, t_base, env_base, left=np.nan, right=np.nan), 1e-9, None)
+
+        t_plv_base, plv_base_series = _plv_timecourse(
+            X_base, FS, centers[0], bw0, cfg.win_sec, cfg.step_sec)
+        plv_base_times = baseline_window[0] + t_plv_base
+
+        comp_t_base, samp_entropy_base = _complexity_series(z_base_z, t_base, win_sec=3.0, step_sec=0.2)
+        lz_t_base, lz_vals_base = _lz_complexity_series(z_base_z, t_base, win_sec=3.0, step_sec=0.2)
+    else:
+        z_base_z = np.array([])
+        z_base = np.array([])
+        z2_base = z3_base = z4_base = None
+        t_plv_base = np.array([])
+        plv_base_series = np.array([])
+        plv_base_times = np.array([])
+        comp_t_base = np.array([])
+        samp_entropy_base = np.array([])
+        lz_t_base = np.array([])
+        lz_vals_base = np.array([])
+
+    env_ign = smooth_sec(t, np.asarray(zf, float)**2, 0.3)
+    var_ign = np.clip(np.interp(t_R, t, env_ign, left=np.nan, right=np.nan), 1e-9, None)
+
+    plv_series = np.interp(t_seg, pack['t'], pack['plv_7p83']) if pack.get('plv_7p83') is not None else plv
+    harmonics_for_msc = centers[:3] if len(centers) >= 3 else centers
+    msc_matrix, msc_null = _msc_matrix(X, FS, harmonics_for_msc, bw0, n_surrogates=32)
+    z2 = np.asarray(z2, float)
+    z3 = np.asarray(z3, float)
+    comp_t, samp_entropy = _complexity_series(zf_z, t, win_sec=3.0, step_sec=0.2)
+    lz_t, lz_vals = _lz_complexity_series(zf_z, t, win_sec=3.0, step_sec=0.2)
+
+    fig = plt.figure(figsize=(16, 10), constrained_layout=True, dpi=160)
+    gs = GridSpec(3, 2, figure=fig)
+
+    ax1 = fig.add_subplot(gs[0, 1])
+    if slopes_base.size:
+        combined = np.concatenate([slopes_base, slopes])
+        lo, hi = np.nanpercentile(combined, [5, 95])
+        # ax1.set_ylim(lo, hi)
+    ax1.plot(t_spec, slopes, color='tab:blue', lw=1.5, label='Ignition β(t)')
+    ax1.set_title('Aperiodic Slope β(t)')
+    ax1.set_ylabel('Slope (β)')
+    ax1.set_xlabel('Time (s)')
+    ax1_twin = ax1.twinx()
+    if t.size and zf_z.size:
+        env_norm = zf_z - np.nanmin(zf_z)
+        env_range = np.nanmax(env_norm) - np.nanmin(env_norm) + 1e-6
+        env_norm = np.clip(env_norm / env_range, 0, 1)
+        ax1_twin.plot(t, env_norm, color='tab:orange', lw=1.2,
+                      alpha=0.7, label='f0 envelope (norm)')
+        ax1_twin.set_ylabel('Normalized envelope (0–1)')
+        # ax1_twin.set_ylim(-0.05, 1.05)
+    annotate_phases(ax1, phases, *ax1.get_ylim())
+    lines, labels = ax1.get_legend_handles_labels()
+    l2, lab2 = ax1_twin.get_legend_handles_labels()
+    ax1.legend(lines + l2, labels + lab2, loc='upper right', fontsize=8)
+
+    ax_delta = fig.add_subplot(gs[0, 0])
+    init_vals = slopes[np.isfinite(slopes)]
+    base_vals = slopes_base[np.isfinite(slopes_base)] if slopes_base.size else np.array([])
+    if base_vals.size:
+        ax_delta.hist(base_vals, bins=20, color='tab:blue', alpha=0.45, label='Baseline')
+        ax_delta.axvline(np.nanmean(base_vals), color='tab:blue', ls='--', lw=1.1)
+    if init_vals.size:
+        ax_delta.hist(init_vals, bins=20, color='tab:orange', alpha=0.45, label='Ignition')
+        ax_delta.axvline(np.nanmean(init_vals), color='tab:orange', ls='--', lw=1.1)
+    if base_vals.size and init_vals.size:
+        delta_beta = np.nanmean(init_vals) - np.nanmean(base_vals)
+        ax_delta.text(0.05, 0.95, f'Δβ ≈ {delta_beta:.2f}', transform=ax_delta.transAxes,
+                      ha='left', va='top', fontsize=10,
+                      bbox=dict(facecolor='white', alpha=0.8, lw=0))
+    ax_delta.set_title('β Shift: Baseline vs Ignition')
+    ax_delta.set_xlabel('Slope β')
+    ax_delta.set_ylabel('Count')
+    ax_delta.legend(loc='upper right')
+
+    ax3 = fig.add_subplot(gs[1, 1])
+    ax3.plot(t_R, R_series, color='tab:green', lw=1.4)
+    ax3.set_ylim(0, 1.05)
+    ax3.set_title('Kuramoto R(t) - Global Integration')
+    ax3.set_ylabel('R(t)')
+    ax3.set_xlabel('Time (s)')
+    annotate_phases(ax3, phases, 0, 1.05)
+
+    ax4 = fig.add_subplot(gs[1, 0])
+    if R_base_series.size and var_base.size:
+        m = np.isfinite(var_base) & np.isfinite(R_base_series)
+        if np.any(m):
+            ax4.scatter(var_base[m], R_base_series[m], s=25, alpha=0.5, color='tab:blue', label='Baseline')
+    if R_series.size and var_ign.size:
+        m = np.isfinite(var_ign) & np.isfinite(R_series)
+        if np.any(m):
+            ax4.scatter(var_ign[m], R_series[m], s=30, alpha=0.7, color='tab:orange', label='Ignition')
+    ax4.set_title('Coherence vs SR Power')
+    ax4.set_xlabel('SR envelope power')
+    ax4.set_ylabel('Kuramoto R')
+    ax4.set_xscale('log')
+    ax4.set_ylim(0, 1.05)
+    ax4.legend(loc='best')
+
+    ax5 = fig.add_subplot(gs[2, 1])
+    if te_t.size:
+        ax5.plot(te_t, te_series, color='tab:purple', lw=1.3)
+    ax5.axhline(0, color='gray', ls='--', lw=1.0)
+    ax5.set_title('Cross-Scale Information Flow')
+    ax5.set_ylabel('ΔCorr² (θ → γ)')
+    ax5.set_xlabel('Time (s)')
+    annotate_phases(ax5, phases, *ax5.get_ylim())
+
+    ax6 = fig.add_subplot(gs[2, 0])
+    harmonics_labels = [f'{freq:.2f} Hz' for freq in harmonics_for_msc]
+    n_h = len(harmonics_labels)
+    n_ch = X.shape[0]
+    base_x = np.arange(n_h)
+    width = 0.8 / max(n_ch, 1)
+    for ci, ch in enumerate(electrodes):
+        offsets = base_x - 0.4 + ci * width + width/2
+        ax6.bar(offsets, msc_matrix[:, ci], width, alpha=0.8, label=ch)
+        for fi in range(n_h):
+            ax6.vlines(offsets[fi], 0, msc_null[fi, ci], colors='#999999', linestyles='dotted', linewidth=0.7)
+    ax6.set_xticks(base_x)
+    ax6.set_xticklabels(harmonics_labels, rotation=20)
+    ax6.set_ylim(0, 1.05)
+    ax6.set_ylabel('MSC')
+    ax6.set_title('EEG–SR Coherence @ Harmonics')
+    ax6.legend(loc='upper right', ncol=min(n_ch, 4), fontsize=8, frameon=False)
+
+    fig.suptitle(f'Ignition {ign_win[0]}–{ign_win[1]}s\n{session_name}', fontsize=14)
+    return fig
+
+
+def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
+    TIME_COL = 'Timestamp'
+    FS = cfg.fs or _infer_fs(records, TIME_COL)
+    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
+    t = provider.t()
+    zf = provider.z_fund()
+    plv = provider.plv_fund()
+    pac = provider.pac_mvl()
+
+    zf_z = smooth_sec(t, robust_z(np.asarray(zf, float)), 0.15)
+    plv = np.asarray(plv, float)
+    pac = np.asarray(pac, float) if pac is not None else np.zeros_like(plv)
+    pac = smooth_sec(t, pac, 0.8)
+
+    spec = provider.spectrogram_for_window(t.min(), t.max())
+    if spec is None:
+        spec = pack.get('spec')
+    if spec is None:
+        spec = window_spec_median(
+            records, ign_win, channels=electrodes, fs=FS, time_col=TIME_COL,
+            band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+        )
+    t_spec, f_spec, S_spec = _slice_spec_to_window(spec, (t.min(), t.max()), min_cols=40)
+    _, slopes_raw = _spectral_slope_series(t_spec, f_spec, S_spec, exclude_centers=ladder[:3], exclude_bw=1.0)
+    slopes = smooth_sec(t_spec, slopes_raw, 1.0)
+
+    baseline_offset = 60.0
+    baseline_duration = max(ign_win[1] - ign_win[0], 5.0)
+    t_base, mask_base = _baseline_slice(records, TIME_COL, ign_win, baseline_offset, baseline_duration)
+    slopes_base = np.array([])
+    if mask_base.size and np.sum(mask_base) > 5:
+        baseline_window = (float(t_base[0]), float(t_base[-1]))
+        tWb, fWb, SWb = window_spec_median(records, baseline_window, channels=electrodes, fs=FS,
+                                           time_col=TIME_COL, band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl)
+        tWb = tWb + cfg.spec_win/2.0
+        _, slopes_base_raw = _spectral_slope_series(tWb, fWb, SWb, exclude_centers=ladder[:3], exclude_bw=1.0)
+        slopes_base = smooth_sec(tWb, slopes_base_raw, 1.0)
+
+    fig, ax = plt.subplots(figsize=(14, 6), dpi=160)
+    ax.plot(t_spec, slopes, color='tab:blue', lw=2.0, label='Aperiodic β(t)')
+    if slopes_base.size:
+        base_lo, base_hi = np.nanpercentile(slopes_base, [10, 90])
+        ax.fill_between([t_spec.min(), t_spec.max()], base_lo, base_hi, color='gray', alpha=0.1,
+                        label='Baseline β 10–90%')
+        delta = float(np.nanmean(slopes) - np.nanmean(slopes_base))
+        ax.text(0.02, 0.9, f'Δβ ≈ {delta:.2f}', transform=ax.transAxes,
+                fontsize=11, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
+    ax.set_ylabel('PSD slope β')
+    ax.set_xlabel('Time (s)')
+
+    ax_twin = ax.twinx()
+    env_norm = zf_z - np.nanmin(zf_z)
+    env_range = np.nanmax(env_norm) - np.nanmin(env_norm) + 1e-6
+    env_norm = np.clip(env_norm / env_range, 0, 1)
+    ax_twin.plot(t, env_norm, color='tab:orange', lw=1.6, alpha=0.85, label='Fundamental z (norm)')
+    plv_norm = (plv - np.nanmin(plv)) / (np.nanmax(plv) - np.nanmin(plv) + 1e-6)
+    ax_twin.plot(t, plv_norm, color='tab:green', lw=1.3, alpha=0.7, label='PLV (norm)')
+    pac_norm = (pac - np.nanmin(pac)) / (np.nanmax(pac) - np.nanmin(pac) + 1e-6)
+    ax_twin.plot(t, pac_norm, color='tab:purple', lw=1.1, alpha=0.6, label='θ→γ PAC (norm)')
+    ax_twin.set_ylabel('Normalized (0–1)')
+    ax_twin.set_ylim(-0.1, 1.1)
+
+    phases = _detect_ignition_phases(
+        t, zf_z, provider.plv_fund(), provider.hsi(), provider.z_h2(), provider.z_h3(),
+        params=PhaseParams(f0=ladder[0]), seed_t='center', p0_band=(-2.0, +0.6), p1_band=(-1.0, +1.4), pad_s=2.0,
+    )
+    annotate_phases(ax, phases, *ax.get_ylim())
+
+    lines, labels = ax.get_legend_handles_labels()
+    l2, lab2 = ax_twin.get_legend_handles_labels()
+    ax.legend(lines + l2, labels + lab2, loc='upper right', fontsize=10)
+    ax.set_title(f'Ignition Signature — {session_name} (window {ign_win[0]}–{ign_win[1]}s)')
+
+    return fig

@@ -607,7 +607,7 @@ def detect_ignitions_session(
     events = pd.DataFrame(rows)
 
     # --- 5) ETA of zR(t) aligned to t0_net ---
-    if onsets.size and not events.empty:
+    if onsets.size and not events.empty and t_cent.size and zR.size:
         dt_R = np.median(np.diff(t_cent)) if t_cent.size > 1 else R_step_sec
         tau = np.arange(-eta_pre_sec, eta_post_sec + dt_R/2, dt_R)
         ETA = []
