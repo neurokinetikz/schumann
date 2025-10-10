@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+import re
 
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -256,6 +257,94 @@ def _as_float_1d(x):
         return a
     # flatten 1d only (ignore 2d like spectrogram S)
     return a.astype(float).ravel()
+
+
+def _normalize_channel_label(label: Optional[str]) -> str:
+    if not label:
+        return ''
+    text = str(label).strip().upper().replace(' ', '')
+    for prefix in ('EEG.', 'EEG_', 'EEG-'):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    if text.startswith('EEG'):
+        text = text[3:]
+    return ''.join(ch for ch in text if ch.isalnum())
+
+
+def _resolve_seed_channel_index(seed_ch: Optional[str], electrodes: Sequence[str]) -> Optional[int]:
+    if not seed_ch:
+        return None
+    norm_seed = _normalize_channel_label(seed_ch)
+    if not norm_seed:
+        return None
+    for idx, ch in enumerate(electrodes):
+        if _normalize_channel_label(ch) == norm_seed:
+            return idx
+    seed_upper = str(seed_ch).upper()
+    for idx, ch in enumerate(electrodes):
+        if seed_upper in str(ch).upper():
+            return idx
+    return None
+
+
+def _match_ignition_event_row(ign_out: Any, ign_win: Tuple[float, float]):
+    events = None
+    if isinstance(ign_out, dict):
+        events = ign_out.get('events')
+    elif hasattr(ign_out, 'events'):
+        events = getattr(ign_out, 'events')
+    if isinstance(events, pd.DataFrame) and not events.empty:
+        if 't_start' not in events.columns or 't_end' not in events.columns:
+            return None
+        t_start, t_end = float(ign_win[0]), float(ign_win[1])
+        tol = 1e-3
+        mask = (np.abs(events['t_start'] - t_start) <= tol) & (np.abs(events['t_end'] - t_end) <= tol)
+        if not mask.any():
+            mask = (events['t_start'] <= (t_end + tol)) & (events['t_end'] >= (t_start - tol))
+        if mask.any():
+            return events.loc[mask].iloc[0]
+    return None
+
+
+def _format_numeric_labels(labels: Sequence[str], decimals: int = 2) -> List[str]:
+    if labels is None:
+        return []
+    fmt = "{:." + str(decimals) + "f}"
+    pattern = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+
+    formatted: List[str] = []
+    for label in labels:
+        if not isinstance(label, str):
+            formatted.append(label)
+            continue
+        def repl(match):
+            try:
+                return fmt.format(float(match.group(0)))
+            except ValueError:
+                return match.group(0)
+        formatted.append(pattern.sub(repl, label))
+    return formatted
+
+
+def _extract_seed_channel(ign_out: Any, ign_win: Tuple[float, float]) -> Optional[str]:
+    if ign_out is None:
+        return None
+
+    candidate = None
+    getter = getattr(ign_out, 'get', None)
+    if callable(getter):
+        for key in ('seed_ch', 'seed_channel'):
+            candidate = getter(key, None)
+            if candidate:
+                return candidate
+
+    row = _match_ignition_event_row(ign_out, ign_win)
+    if row is not None:
+        for key in ('seed_ch', 'seed_channel'):
+            if key in row and pd.notna(row[key]):
+                return row[key]
+    return candidate
 
 def hsi_from_spec_v2(spec,
                      ladder=(7.83,14.3,20.8,27.3,33.8,40.3,46.8,53.5),
@@ -561,6 +650,59 @@ def _msc_matrix(X: np.ndarray, fs: float, freqs: Sequence[float], bw: float,
     return msc, null95
 
 
+def _plv_matrix(X: np.ndarray, fs: float, f0: float, bw: float) -> np.ndarray:
+    b = _fir_bandpass(f0, bw, fs)
+    Xb = filtfilt(b, [1.0], X, axis=1, padlen=min(2400, X.shape[-1]-1))
+    phases = np.angle(hilbert(Xb, axis=-1))
+    n = X.shape[0]
+    plv_mat = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i+1, n):
+            dphi = phases[i] - phases[j]
+            plv_val = np.abs(np.mean(np.exp(1j*dphi)))
+            plv_mat[i, j] = plv_mat[j, i] = plv_val
+    return plv_mat
+
+
+def _mode_metrics(power: np.ndarray) -> Tuple[float, float]:
+    power = np.asarray(power, float)
+    power = np.clip(power, 0, None)
+    total = power.sum()
+    if total <= 0 or not np.any(np.isfinite(power)):
+        return np.nan, np.nan
+    normalized = power / total
+    entropy = -np.sum(normalized * np.log(normalized + 1e-12)) / np.log(len(power))
+    pr = (total ** 2) / (np.sum(power ** 2) + 1e-12)
+    return float(entropy), float(pr)
+
+
+def _interp_safe(x_new: np.ndarray, xp: np.ndarray, fp: np.ndarray) -> np.ndarray:
+    xp = np.asarray(xp, float)
+    fp = np.asarray(fp, float)
+    if xp.size < 2 or fp.size < 2 or xp.size != fp.size:
+        return np.full_like(x_new, np.nan, dtype=float)
+    return np.interp(x_new, xp, fp, left=fp[0], right=fp[-1])
+
+
+def _te_matrix(X: np.ndarray, fs: float, lead_sec: float = 0.05) -> np.ndarray:
+    lead = max(1, int(round(lead_sec * fs)))
+    n = X.shape[0]
+    te = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            xi = X[i]
+            xj_future = X[j][lead:]
+            xj_past = X[j][:-lead]
+            if xj_future.size == 0:
+                continue
+            cc_future = np.corrcoef(xi[:-lead], xj_future)[0, 1]
+            cc_past = np.corrcoef(xj_past, xj_future)[0, 1]
+            te[i, j] = (cc_future ** 2) - (cc_past ** 2)
+    return te
+
+
 def _transfer_entropy_proxy(theta_env: np.ndarray, gamma_env: np.ndarray, fs: float,
                              lead_sec: float = 0.1, win_sec: float = 2.0,
                              step_sec: float = 0.25) -> Tuple[np.ndarray, np.ndarray]:
@@ -620,7 +762,8 @@ def _complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, step_s
     for start in range(0, signal.size - w + 1, s):
         seg = signal[start:start+w]
         ent.append(_sample_entropy(seg))
-        times.append(t[start + w//2])
+        idx = min(start + w//2, t.size - 1)
+        times.append(t[idx])
     return np.asarray(times), np.asarray(ent)
 
 
@@ -690,7 +833,8 @@ def _lz_complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, ste
     for start in range(0, signal.size - w + 1, s):
         seg = signal[start:start+w]
         values.append(_lempel_ziv_complexity(seg))
-        times.append(t[start + w//2])
+        idx = min(start + w//2, t.size - 1)
+        times.append(t[idx])
     return np.asarray(times), np.asarray(values)
 
 
@@ -1903,7 +2047,7 @@ def estimate_sr_peaks(records, fs, ign_win, session_harmonics, search_band=0.5):
     return detected_freqs
 
 
-def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
+def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name, *, H=None):
     assert electrodes, "electrodes cannot be empty"
 
     TIME_COL = 'Timestamp'
@@ -1945,9 +2089,14 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     sizes, durations = _avalanche_size_duration(zf_z, t, thresh_z, bridge_sec=0.30)
 
     mask_seg = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
+    mask_base = (t_all >= ign_win[0] - 60 - (ign_win[1]-ign_win[0])) & (t_all <= ign_win[0] - 60)
+    if mask_base.sum() < 10:
+        mask_base = ~mask_seg
     X = X_full[:, mask_seg]
+    X_base = X_full[:, mask_base]
     t_seg = t_all[mask_seg]
-    t_R, R_series = _kuramoto_order_series(X, FS, centers[0], bw0)
+    t_R, R_raw = _kuramoto_order_series(X, FS, centers[0], bw0)
+    R_series = smooth_sec(t_R, R_raw, 0.3)
     t_R = t_R + ign_win[0]
 
     theta_b = _fir_bandpass(centers[0], bw0, FS)
@@ -1963,6 +2112,32 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     if te_series.size:
         te_series = smooth_sec(te_t, te_series, 0.3)
     te_t = te_t + ign_win[0]
+
+    te_matrix = _te_matrix(X, FS, lead_sec=0.05)
+    te_base = _te_matrix(X_base, FS, lead_sec=0.05)
+    te_mean = np.nanmean(te_base[np.isfinite(te_base)])
+    te_std = np.nanstd(te_base[np.isfinite(te_base)]) + 1e-9
+    te_diff = ((te_matrix - te_mean) / te_std) - ((te_base - te_mean) / te_std)
+    np.fill_diagonal(te_diff, 0.0)
+    seed_ch = _extract_seed_channel(ign_out, ign_win)
+    seed_idx = _resolve_seed_channel_index(seed_ch, electrodes)
+    if seed_idx is not None and (0 <= seed_idx < len(electrodes)):
+        seed_display = electrodes[seed_idx].replace('EEG.', '')
+    else:
+        seed_display = (str(seed_ch).replace('EEG.', '') if seed_ch else 'N/A')
+        seed_idx = None
+    np.fill_diagonal(te_diff, 0.0)
+
+    mode_power_base = mode_power_ign = None
+    entropy_base = entropy_ign = pr_base = pr_ign = np.nan
+    if H is not None:
+        from connectome_harmonics import project_to_harmonics
+        proj_base = project_to_harmonics(X_base, H)
+        proj_ign = project_to_harmonics(X, H)
+        mode_power_base = np.mean(proj_base**2, axis=1)
+        mode_power_ign = np.mean(proj_ign**2, axis=1)
+        entropy_base, pr_base = _mode_metrics(mode_power_base)
+        entropy_ign, pr_ign = _mode_metrics(mode_power_ign)
 
     params = PhaseParams()
     params.f0 = centers[0]
@@ -1992,7 +2167,6 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
         tWb = tWb + cfg.spec_win/2.0
         _, slopes_base = _spectral_slope_series(tWb, fWb, SWb)
 
-        X_base = X_full[:, mask_base]
         z_base, _ = _narrowband_envelope_z(X_base, FS, centers[0], bw0)
         z2_base = z3_base = z4_base = None
         if len(centers) > 1:
@@ -2004,11 +2178,12 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
         z_base_z = smooth_sec(t_base, robust_z(np.asarray(z_base, float)), 0.15)
         sizes_base, durations_base = _avalanche_size_duration(z_base_z, t_base, thresh_z, bridge_sec=0.30)
 
-        t_R_base, R_base_series = _kuramoto_order_series(X_base, FS, centers[0], bw0)
+        t_R_base, R_base_raw = _kuramoto_order_series(X_base, FS, centers[0], bw0)
+        R_base_series = smooth_sec(t_R_base, R_base_raw, 0.3)
         t_R_base = t_R_base + baseline_window[0]
 
         env_base = smooth_sec(t_base, np.asarray(z_base, float)**2, 0.3)
-        var_base = np.clip(np.interp(t_R_base, t_base, env_base, left=np.nan, right=np.nan), 1e-9, None)
+        var_base = np.clip(_interp_safe(t_R_base, t_base, env_base), 1e-9, None)
 
         t_plv_base, plv_base_series = _plv_timecourse(
             X_base, FS, centers[0], bw0, cfg.win_sec, cfg.step_sec)
@@ -2029,7 +2204,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
         lz_vals_base = np.array([])
 
     env_ign = smooth_sec(t, np.asarray(zf, float)**2, 0.3)
-    var_ign = np.clip(np.interp(t_R, t, env_ign, left=np.nan, right=np.nan), 1e-9, None)
+    var_ign = np.clip(_interp_safe(t_R, t, env_ign), 1e-9, None)
 
     plv_series = np.interp(t_seg, pack['t'], pack['plv_7p83']) if pack.get('plv_7p83') is not None else plv
     harmonics_for_msc = centers[:3] if len(centers) >= 3 else centers
@@ -2042,52 +2217,80 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     fig = plt.figure(figsize=(16, 10), constrained_layout=True, dpi=160)
     gs = GridSpec(3, 2, figure=fig)
 
-    ax1 = fig.add_subplot(gs[0, 1])
-    if slopes_base.size:
-        combined = np.concatenate([slopes_base, slopes])
-        lo, hi = np.nanpercentile(combined, [5, 95])
-        # ax1.set_ylim(lo, hi)
-    ax1.plot(t_spec, slopes, color='tab:blue', lw=1.5, label='Ignition β(t)')
-    ax1.set_title('Aperiodic Slope β(t)')
-    ax1.set_ylabel('Slope (β)')
-    ax1.set_xlabel('Time (s)')
-    ax1_twin = ax1.twinx()
-    if t.size and zf_z.size:
-        env_norm = zf_z - np.nanmin(zf_z)
-        env_range = np.nanmax(env_norm) - np.nanmin(env_norm) + 1e-6
-        env_norm = np.clip(env_norm / env_range, 0, 1)
-        ax1_twin.plot(t, env_norm, color='tab:orange', lw=1.2,
-                      alpha=0.7, label='f0 envelope (norm)')
-        ax1_twin.set_ylabel('Normalized envelope (0–1)')
-        # ax1_twin.set_ylim(-0.05, 1.05)
-    annotate_phases(ax1, phases, *ax1.get_ylim())
-    lines, labels = ax1.get_legend_handles_labels()
-    l2, lab2 = ax1_twin.get_legend_handles_labels()
-    ax1.legend(lines + l2, labels + lab2, loc='upper right', fontsize=8)
+    ax_modes = fig.add_subplot(gs[0, 0])
+    if mode_power_base is not None:
+        n_modes = min(12, mode_power_base.shape[0])
+        idx = np.arange(n_modes)
+        width = 0.35
+        ax_modes.bar(idx - width/2, mode_power_base[:n_modes], width, alpha=0.6, label='Baseline')
+        ax_modes.bar(idx + width/2, mode_power_ign[:n_modes], width, alpha=0.8, label='Ignition')
+        ax_modes.set_xticks(idx)
+        ax_modes.set_xticklabels([f'M{k}' for k in idx])
+        ax_modes.set_ylabel('Mode power')
+        ax_modes.set_title('Connectome modes engagement')
+        ax_modes.legend(fontsize=8)
+        ax_modes.text(0.02, 0.92,
+                      f'H_base={entropy_base:.2f}, PR={pr_base:.1f}\nH_ign={entropy_ign:.2f}, PR={pr_ign:.1f}',
+                      transform=ax_modes.transAxes, fontsize=8,
+                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+    else:
+        fallback_labels = [f'{f:.2f} Hz' for f in ladder[:min(3, len(ladder))]]
+        ign_vals = []
+        base_vals = []
+        for idx_mode in range(len(fallback_labels)):
+            if idx_mode == 0:
+                ign_vals.append(float(np.nanmean(np.abs(provider.z_fund()))))
+                base_vals.append(float(np.nanmean(np.abs(z_base))))
+            elif idx_mode == 1 and z2_base is not None:
+                ign_vals.append(float(np.nanmean(np.abs(provider.z_h2()))))
+                base_vals.append(float(np.nanmean(np.abs(z2_base))))
+            elif idx_mode == 2 and z3_base is not None:
+                ign_vals.append(float(np.nanmean(np.abs(provider.z_h3()))))
+                base_vals.append(float(np.nanmean(np.abs(z3_base))))
+            else:
+                ign_vals.append(np.nan)
+                base_vals.append(np.nan)
+        idx = np.arange(len(fallback_labels))
+        width = 0.35
+        ax_modes.bar(idx - width/2, base_vals, width, alpha=0.6, label='Baseline')
+        ax_modes.bar(idx + width/2, ign_vals, width, alpha=0.8, label='Ignition')
+        ax_modes.set_xticks(idx)
+        ax_modes.set_xticklabels(fallback_labels)
+        ax_modes.set_ylabel('Envelope magnitude')
+        ax_modes.set_title('Harmonic Envelopes')
+        ax_modes.legend(fontsize=8)
 
-    ax_delta = fig.add_subplot(gs[0, 0])
-    init_vals = slopes[np.isfinite(slopes)]
-    base_vals = slopes_base[np.isfinite(slopes_base)] if slopes_base.size else np.array([])
-    if base_vals.size:
-        ax_delta.hist(base_vals, bins=20, color='tab:blue', alpha=0.45, label='Baseline')
-        ax_delta.axvline(np.nanmean(base_vals), color='tab:blue', ls='--', lw=1.1)
-    if init_vals.size:
-        ax_delta.hist(init_vals, bins=20, color='tab:orange', alpha=0.45, label='Ignition')
-        ax_delta.axvline(np.nanmean(init_vals), color='tab:orange', ls='--', lw=1.1)
-    if base_vals.size and init_vals.size:
-        delta_beta = np.nanmean(init_vals) - np.nanmean(base_vals)
-        ax_delta.text(0.05, 0.95, f'Δβ ≈ {delta_beta:.2f}', transform=ax_delta.transAxes,
-                      ha='left', va='top', fontsize=10,
-                      bbox=dict(facecolor='white', alpha=0.8, lw=0))
-    ax_delta.set_title('β Shift: Baseline vs Ignition')
-    ax_delta.set_xlabel('Slope β')
-    ax_delta.set_ylabel('Count')
-    ax_delta.legend(loc='upper right')
+    ax_te = fig.add_subplot(gs[2, 0])
+    lim = float(np.nanmax(np.abs(te_diff)))
+    lim = max(lim, 1e-2)
+    im = ax_te.imshow(te_diff, cmap='RdBu_r', vmin=-lim, vmax=lim, aspect='auto', interpolation='nearest')
+    cbar = fig.colorbar(im, ax=ax_te, fraction=0.05, pad=0.02)
+    cbar.set_label('ΔTE (z-scored)')
+    ax_te.set_title(f'Directed Information Flow')
+    tick_labels = [ch.replace('EEG.', '') for ch in electrodes]
+    idx_range = range(len(electrodes))
+    ax_te.set_xticks(idx_range)
+    ax_te.set_xticklabels(tick_labels, rotation=90)
+    ax_te.set_yticks(idx_range)
+    ax_te.set_yticklabels(tick_labels)
+    if seed_idx is not None:
+        ax_te.axhline(seed_idx - 0.5, color='black', linewidth=1.0, alpha=0.7)
+        ax_te.axhline(seed_idx + 0.5, color='black', linewidth=1.0, alpha=0.7)
+        ax_te.axvline(seed_idx - 0.5, color='black', linewidth=1.0, alpha=0.7)
+        ax_te.axvline(seed_idx + 0.5, color='black', linewidth=1.0, alpha=0.7)
+        for idx_lbl, lbl in enumerate(ax_te.get_xticklabels()):
+            if idx_lbl == seed_idx:
+                lbl.set_fontweight('bold')
+                lbl.set_color('black')
+        for idx_lbl, lbl in enumerate(ax_te.get_yticklabels()):
+            if idx_lbl == seed_idx:
+                lbl.set_fontweight('bold')
+                lbl.set_color('black')
 
     ax3 = fig.add_subplot(gs[1, 1])
     ax3.plot(t_R, R_series, color='tab:green', lw=1.4)
     ax3.set_ylim(0, 1.05)
-    ax3.set_title('Kuramoto R(t) - Global Integration')
+    ax3.set_title('Kuramoto Global Integration')
     ax3.set_ylabel('R(t)')
     ax3.set_xlabel('Time (s)')
     annotate_phases(ax3, phases, 0, 1.05)
@@ -2117,7 +2320,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     ax5.set_xlabel('Time (s)')
     annotate_phases(ax5, phases, *ax5.get_ylim())
 
-    ax6 = fig.add_subplot(gs[2, 0])
+    ax6 = fig.add_subplot(gs[0, 1])
     harmonics_labels = [f'{freq:.2f} Hz' for freq in harmonics_for_msc]
     n_h = len(harmonics_labels)
     n_ch = X.shape[0]
@@ -2125,17 +2328,228 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     width = 0.8 / max(n_ch, 1)
     for ci, ch in enumerate(electrodes):
         offsets = base_x - 0.4 + ci * width + width/2
-        ax6.bar(offsets, msc_matrix[:, ci], width, alpha=0.8, label=ch)
+        edge = 'k' if (seed_idx is not None and ci == seed_idx) else None
+        lw = 1.0 if (seed_idx is not None and ci == seed_idx) else 0.0
+        ax6.bar(offsets, msc_matrix[:, ci], width, alpha=0.8, label=ch,
+                edgecolor=edge, linewidth=lw)
         for fi in range(n_h):
-            ax6.vlines(offsets[fi], 0, msc_null[fi, ci], colors='#999999', linestyles='dotted', linewidth=0.7)
+            ax6.vlines(offsets[fi], 0, msc_null[fi, ci], colors='#ffffff', linestyles='dotted', linewidth=0.7,
+                        alpha=0.7)
     ax6.set_xticks(base_x)
     ax6.set_xticklabels(harmonics_labels, rotation=20)
     ax6.set_ylim(0, 1.05)
     ax6.set_ylabel('MSC')
-    ax6.set_title('EEG–SR Coherence @ Harmonics')
+    ax6.set_title(f'EEG–SR Coherence @ Harmonics')
     ax6.legend(loc='upper right', ncol=min(n_ch, 4), fontsize=8, frameon=False)
 
     fig.suptitle(f'Ignition {ign_win[0]}–{ign_win[1]}s\n{session_name}', fontsize=14)
+    return fig
+
+
+def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
+    TIME_COL = cfg.time_col
+    FS = cfg.fs or _infer_fs(records, TIME_COL)
+    t_all = np.asarray(records[TIME_COL], float)
+    if t_all.size < 2:
+        raise ValueError('Not enough samples to build SR signature panel')
+    X = _get_matrix(records, electrodes)
+
+    f1 = ladder[0]
+    f2 = ladder[1] if len(ladder) > 1 else f1 * 2.0
+    f3 = ladder[2] if len(ladder) > 2 else f1 * 3.0
+    bw = cfg.bw_hz if cfg.bw_hz is not None else 0.5
+
+    pad = max(4.0, 0.5 * (ign_win[1] - ign_win[0]))
+    t0 = max(t_all[0], ign_win[0] - pad)
+    t1 = min(t_all[-1], ign_win[1] + pad)
+    mask_seg = (t_all >= t0) & (t_all <= t1)
+    if not np.any(mask_seg):
+        mask_seg = np.ones_like(t_all, dtype=bool)
+        t0, t1 = t_all[0], t_all[-1]
+
+    # Spectrogram (5–25 Hz, row-wise z)
+    t_spec, f_spec, S_spec = window_spec_median(
+        records, (t0, t1), channels=electrodes, fs=FS, time_col=TIME_COL,
+        band=(5, 25), win_sec=2.0, overlap=0.5
+    )
+    spec_z = _spec_db_rowz(S_spec)
+
+    # Harmonic envelopes and PLV
+    env1_full, _ = _narrowband_envelope_z(X, FS, f1, bw)
+
+    def _safe_envelope(center_hz: float) -> np.ndarray:
+        if center_hz >= (0.48 * FS):
+            return np.full_like(env1_full, np.nan, dtype=float)
+        amp, _ = _narrowband_envelope_z(X, FS, center_hz, bw)
+        return amp
+
+    env2_full = _safe_envelope(f2)
+    env3_full = _safe_envelope(f3)
+    def _to_z(env):
+        if not np.isfinite(env).any():
+            return np.full_like(env, np.nan, dtype=float)
+        return smooth_sec(t_all, robust_z(env), 0.25)
+
+    env1_z = _to_z(env1_full)
+    env2_z = _to_z(env2_full)
+    env3_z = _to_z(env3_full)
+
+    t_plv_rel, plv_series = _plv_timecourse(X, FS, f1, bw, win_sec=1.0, step_sec=0.25)
+    plv_times = t_all[0] + t_plv_rel
+
+    # ΔHSI proxy from mean-centered z envelopes
+    valid_envs = [env for env in (env1_z, env2_z, env3_z) if np.isfinite(env).any()]
+    if not valid_envs:
+        z_mean = np.full_like(env1_z, np.nan)
+    else:
+        z_stack = np.vstack(valid_envs)
+        z_mean = np.nanmean(z_stack, axis=0)
+    baseline_mask = (t_all >= t0) & (t_all < ign_win[0])
+    base_mean = np.nanmean(z_mean[baseline_mask]) if np.any(baseline_mask) else np.nanmedian(z_mean)
+    delta_hsi = z_mean - base_mean
+
+    # Triadic bicoherence
+    triads = []
+    if len(ladder) >= 2:
+        triads.append((f1, f1, f2))
+    else:
+        triads.append((f1, f1, 2 * f1))
+    if len(ladder) >= 3:
+        triads.append((f1, f2, f3))
+    else:
+        triads.append((f1, 2 * f1, 3 * f1))
+    t_bic_rel, bic_raw = _bicoherence_triads_timecourse(X, FS, triads, bw, win_sec=1.0, step_sec=0.25)
+    t_bic = t_all[0] + t_bic_rel
+    raw_keys = list(bic_raw.keys())
+    triad_keys = _format_numeric_labels(raw_keys, decimals=2)
+    bic = {label: bic_raw[key] for label, key in zip(triad_keys, raw_keys)}
+
+    # PAC MVL
+    t_pac_rel, pac_vals = _pac_mvl_timecourse(
+        X, FS,
+        theta_band=(max(0.1, f1 - 0.5), f1 + 0.5),
+        gamma_band=(30.0, 60.0),
+        win_sec=6, step_sec=0.1,
+        amp_gate_pct=50,
+    )
+    t_pac = t_all[0] + t_pac_rel
+
+    # Kuramoto R(t)
+    t_R_rel, R_series = _kuramoto_order_series(X, FS, f1, bw)
+    t_R = t_all[0] + t_R_rel
+    R_smooth = smooth_sec(t_R, R_series, 0.3)
+
+    fig = plt.figure(figsize=(14, 12), dpi=160)
+    gs = GridSpec(5, 1, height_ratios=[2.3, 1.6, 1.3, 1.2, 1.2], hspace=0.5)
+    # ax_badge = fig.add_subplot(gs[0])
+    ax_spec = fig.add_subplot(gs[0])
+    ax_env = fig.add_subplot(gs[1], sharex=ax_spec)
+    ax_hsi = fig.add_subplot(gs[2], sharex=ax_spec)
+    ax_bic = fig.add_subplot(gs[3], sharex=ax_spec)
+    ax_pac = fig.add_subplot(gs[4], sharex=ax_spec)
+
+    extent = [t_spec[0], t_spec[-1], f_spec[0], f_spec[-1]]
+    im = ax_spec.imshow(spec_z, extent=extent, origin='lower', aspect='auto', cmap='Spectral_r', vmin=-3, vmax=3)
+    ax_spec.set_ylabel('Frequency (Hz)')
+    ax_spec.set_title('SR-focused spectrogram (row-z)')
+    for freq in (f1, f2, f3):
+        ax_spec.axhline(freq, color='white', linestyle='--', linewidth=1.0, alpha=0.8)
+    ax_spec.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    cbar = fig.colorbar(im, ax=ax_spec, pad=0.01, fraction=0.04)
+    cbar.set_label('z (per frequency)')
+
+    ax_env.plot(t_all, env1_z, label=f'{f1:.2f} Hz', color='tab:orange', linewidth=1.6)
+    ax_env.plot(t_all, env2_z, label=f'{f2:.2f} Hz', color='tab:green', linewidth=1.1)
+    ax_env.plot(t_all, env3_z, label=f'{f3:.2f} Hz', color='tab:purple', linewidth=1.1)
+    ax_env.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    ax_env.set_ylabel('Envelope z')
+    ax_env.set_title('Harmonic envelopes (z) with PLV')
+    ax_env.legend(loc='upper left', fontsize=8, frameon=False)
+    ax_env.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    ax_env2 = ax_env.twinx()
+    ax_env2.plot(plv_times, plv_series, linestyle='--', color='tab:blue', linewidth=1.4, label='PLV @ fundamental')
+    ax_env2.set_ylabel('PLV')
+    ax_env2.set_ylim(0, 1.05)
+    ax_env2.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    handles2, labels2 = ax_env2.get_legend_handles_labels()
+    if handles2:
+        ax_env2.legend(handles2, labels2, loc='upper right', fontsize=8, frameon=False)
+
+    window_mask = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
+    z_peak = float(np.nanmax(env1_z[window_mask])) if np.any(window_mask) else np.nan
+    if np.any(window_mask):
+        idx_peak = np.nanargmax(env1_z[window_mask])
+        t_peak = t_all[window_mask][idx_peak]
+        ax_env.plot(t_peak, z_peak, marker='o', color='tab:orange')
+
+    plv_win_mask = (plv_times >= ign_win[0]) & (plv_times <= ign_win[1])
+    plv_mean = float(np.nanmean(plv_series[plv_win_mask])) if np.any(plv_win_mask) else np.nan
+    if np.isfinite(plv_mean):
+        ax_env2.axhline(plv_mean, color='tab:blue', linestyle=':', linewidth=1.0)
+
+    ax_hsi.plot(t_all, delta_hsi, color='tab:red', linewidth=1.4)
+    ax_hsi.fill_between(t_all, 0, delta_hsi, where=delta_hsi >= 0, color='tab:red', alpha=0.2)
+    ax_hsi.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    ax_hsi.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    ax_hsi.set_ylabel('ΔHSI (a.u.)')
+    ax_hsi.set_title('Harmonic tightening (ΔHSI proxy)')
+
+    colors = ['tab:cyan', 'tab:pink']
+    bic_peaks = []
+    for idx, key in enumerate(triad_keys):
+        series = bic[key]
+        ax_bic.plot(t_bic, series, color=colors[idx % len(colors)], linewidth=1.3, label=key)
+        win_mask = (t_bic >= ign_win[0]) & (t_bic <= ign_win[1])
+        if np.any(win_mask):
+            peak_idx = np.nanargmax(series[win_mask])
+            abs_idx = np.flatnonzero(win_mask)[peak_idx]
+            ax_bic.plot(t_bic[abs_idx], series[abs_idx], marker='*', color=colors[idx % len(colors)], markersize=10)
+            bic_peaks.append(float(series[abs_idx]))
+    ax_bic.set_ylabel('Bicoherence')
+    ax_bic.set_ylim(0, 1.05)
+    ax_bic.set_title('Triadic bicoherence')
+    ax_bic.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    ax_bic.legend(loc='upper right', fontsize=8, frameon=False)
+
+    pac_base_mask = (t_pac >= (ign_win[0] - pad)) & (t_pac < ign_win[0])
+    pac_win_mask = (t_pac >= ign_win[0]) & (t_pac <= ign_win[1])
+    pac_base = np.nanmean(pac_vals[pac_base_mask]) if np.any(pac_base_mask) else np.nan
+    pac_win = np.nanmean(pac_vals[pac_win_mask]) if np.any(pac_win_mask) else np.nan
+    delta_pac = pac_win - pac_base if np.isfinite(pac_win) and np.isfinite(pac_base) else np.nan
+    ax_pac.plot(t_pac, pac_vals, color='tab:purple', linewidth=1.4)
+    ax_pac.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    ax_pac.axhline(pac_base, color='#888888', linestyle=':', linewidth=0.9) if np.isfinite(pac_base) else None
+    if np.isfinite(pac_win):
+        ax_pac.axhline(pac_win, color='tab:purple', linestyle='--', linewidth=1.0)
+    ax_pac.set_ylabel('MVL')
+    ax_pac.set_xlabel('Time (s)')
+    ax_pac.set_title('θ→γ PAC (MVL)')
+
+    ax_spec.set_xlim(t0, t1)
+    for ax in (ax_env, ax_hsi, ax_bic, ax_pac):
+        ax.set_xlim(t0, t1)
+
+    row = _match_ignition_event_row(ign_out, ign_win)
+    seed_roi = str(row.get('seed_roi')) if row is not None and 'seed_roi' in row else 'N/A'
+    type_label = str(row.get('type_label')) if row is not None and 'type_label' in row else 'unknown'
+
+    bic_peak = float(np.nanmax(bic_peaks)) if bic_peaks else np.nan
+    R_mask = (t_R >= ign_win[0]) & (t_R <= ign_win[1])
+    R_peak = float(np.nanmax(R_smooth[R_mask])) if np.any(R_mask) else np.nan
+
+    # badge_parts = [
+    #     f'Seed ROI {seed_roi}',
+    #     f'1× z_peak {z_peak:.2f}' if np.isfinite(z_peak) else '1× z_peak n/a',
+    #     f'PLV_mean {plv_mean:.2f}' if np.isfinite(plv_mean) else 'PLV_mean n/a',
+    #     f'R_peak {R_peak:.2f}' if np.isfinite(R_peak) else 'R_peak n/a',
+    #     f'Triad Bic_peak {bic_peak:.2f}' if np.isfinite(bic_peak) else 'Triad Bic_peak n/a',
+    #     f'ΔPAC {delta_pac:+.2f}' if np.isfinite(delta_pac) else 'ΔPAC n/a',
+    #     type_label,
+    # ]
+    # ax_badge.axis('off')
+    # ax_badge.text(0.01, 0.5, ' | '.join(badge_parts), ha='left', va='center', fontsize=11, fontweight='bold')
+
+    fig.suptitle(f'Ignition SR signature {ign_win[0]}–{ign_win[1]} s\n{session_name}', fontsize=14,y=0.95)
     return fig
 
 
@@ -2213,4 +2627,100 @@ def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg,
     ax.legend(lines + l2, labels + lab2, loc='upper right', fontsize=10)
     ax.set_title(f'Ignition Signature — {session_name} (window {ign_win[0]}–{ign_win[1]}s)')
 
+    return fig
+
+
+def six_panel_3(records, electrodes, ign_win, ign_out, ladder, cfg, session_name, *, H=None):
+    TIME_COL = 'Timestamp'
+    FS = cfg.fs or _infer_fs(records, TIME_COL)
+    t_all = np.asarray(records[TIME_COL], float)
+    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
+    t = provider.t()
+    zf = provider.z_fund()
+    plv = provider.plv_fund()
+
+    # 1-2) Harmonic mode engagement
+    X = _get_matrix(records, electrodes)
+    mask_ign = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
+    baseline_offset = 60.0
+    baseline_window = (ign_win[0] - baseline_offset - (ign_win[1]-ign_win[0]), ign_win[0]-baseline_offset)
+    mask_base = (t_all >= baseline_window[0]) & (t_all <= baseline_window[1])
+    if mask_base.sum() < 10:
+        mask_base = ~mask_ign
+
+    eigvals = eigvecs = None
+    mode_power_base = mode_power_ign = None
+    if H is not None:
+        X_base_proj = project_to_harmonics(X[:, mask_base], H)
+        X_ign_proj = project_to_harmonics(X[:, mask_ign], H)
+        mode_power_base = np.mean(X_base_proj**2, axis=1)
+        mode_power_ign = np.mean(X_ign_proj**2, axis=1)
+        coeff_series = np.mean(project_to_harmonics(X[:, mask_ign], H[:,:4])**2, axis=1)
+    else:
+        mode_power_base = np.nan
+        coeff_series = np.array([])
+
+    # 3-4) Topology metrics
+    # Build functional connectivity using PLV
+    X_ign = X[:, mask_ign]
+    plv_matrix = _plv_matrix(X_ign, FS, ladder[0], cfg.bw_hz)
+    baseline_matrix = _plv_matrix(X[:, mask_base], FS, ladder[0], cfg.bw_hz)
+    import networkx as nx
+    G_ign = nx.from_numpy_array(plv_matrix)
+    G_base = nx.from_numpy_array(baseline_matrix)
+    mod_base = nx.algorithms.community.modularity(G_base, [range(len(electrodes))])
+    mod_ign = nx.algorithms.community.modularity(G_ign, [range(len(electrodes))])
+    integ_time = plv_matrix.mean()
+
+    # 5-6) Directed connectivity
+    te_matrix = _te_matrix(X_ign, FS)
+    te_base = _te_matrix(X[:, mask_base], FS)
+    te_diff = te_matrix - te_base
+
+    fig = plt.figure(figsize=(16, 10), constrained_layout=True, dpi=160)
+    gs = GridSpec(3, 2, figure=fig)
+
+    ax1 = fig.add_subplot(gs[0, 0])
+    if mode_power_base is not None and np.size(mode_power_base) > 1:
+        n_modes = min(12, len(mode_power_base))
+        x = np.arange(n_modes)
+        width = 0.35
+        ax1.bar(x - width/2, mode_power_base[:n_modes], width, label='Baseline', alpha=0.6)
+        ax1.bar(x + width/2, mode_power_ign[:n_modes], width, label='Ignition', alpha=0.8)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels([f'M{k}' for k in range(n_modes)])
+        ax1.set_ylabel('Mode power')
+        ax1.set_title('Connectome modes engagement')
+        ax1.legend()
+
+    ax2 = fig.add_subplot(gs[0, 1])
+    if measure := pack.get('mode_time_series'):
+        ax2.plot(measure['t'], measure['fundamental'], label='Fundamental mode')
+        ax2.plot(measure['t'], measure['second'], label='2nd mode', alpha=0.7)
+        ax2.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.1)
+        ax2.set_title('Mode amplitude timeline')
+        ax2.legend()
+
+    ax3 = fig.add_subplot(gs[1, 0])
+    ax3.imshow(baseline_matrix, vmin=0, vmax=1, cmap='Blues')
+    ax3.set_title('Functional graph – baseline')
+
+    ax4 = fig.add_subplot(gs[1, 1])
+    ax4.imshow(plv_matrix, vmin=0, vmax=1, cmap='Oranges')
+    ax4.set_title('Functional graph – ignition')
+
+    ax5 = fig.add_subplot(gs[2, 0])
+    ax5.plot(t, smooth_sec(t, plv, 0.3), label='PLV (fundamental)')
+    ax52 = ax5.twinx()
+    ax5.plot(t, zf_z, label='Fundamental envelope', color='tab:orange')
+    ax5.set_title('Integration vs modularity')
+    ax5.legend()
+
+    ax6 = fig.add_subplot(gs[2, 1])
+    im = ax6.imshow(te_diff, cmap='coolwarm', vmin=-0.2, vmax=0.2)
+    fig.colorbar(im, ax=ax6, fraction=0.05, pad=0.02)
+    ax6.set_title('Transfer entropy Δ (ign - baseline)')
+
+    fig.suptitle(f'Ignition Six Panel 3 — {session_name} | Window {ign_win[0]}–{ign_win[1]}s')
     return fig
