@@ -8,6 +8,7 @@ import re
 
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.colors import ListedColormap
 
 from typing import Any, Dict, Optional, Sequence,Tuple, List, Iterable
 from scipy.signal import stft, firwin, filtfilt, detrend, savgol_filter, hilbert, stft, welch
@@ -21,6 +22,357 @@ mpl.rcParams.update({
     "legend.fontsize": 10,
     "figure.titlesize": 16,
 })
+
+
+LIFEAQUATIC_SPEC_CMAP = ListedColormap([
+    '#011f3b', '#03588c', '#048abf', '#5bbad6', '#f4d35e', '#ee964b', '#f95738'
+], name='life_aquatic_spec')
+
+LIFEAQUATIC_COLORS = {
+    'fundamental': '#f95738',
+    'harm2': '#f4d35e',
+    'harm3': '#48beff',
+    'plv': '#247ba0',
+    'plv_mean': '#1b4d6e',
+    'delta_hsi': '#ee6c4d',
+    'bic1': '#ff9f1c',
+    'bic2': '#2ec4b6',
+    'pac': '#006d77',
+    'baseline_line': '#6c757d',
+    'window_fill': '#f4e9c8',
+    'off_harmonic': '#9aa7b1',
+    'tick': '#0e1f33',
+    'spine': '#1a3f5c',
+    'panel_bg': '#eef6fb'
+}
+
+MATRIX_SPEC_CMAP = ListedColormap([
+    '#010b0a', '#022d1a', '#054321', '#0b5c29', '#128b3a', '#1ecf55', '#77ff9c'
+], name='matrix_spec')
+
+MATRIX_COLORS = {
+    'fundamental': '#00ff7f',
+    'harm2': '#00d084',
+    'harm3': '#00a36c',
+    'plv': '#5cf2c7',
+    'plv_mean': '#2aa982',
+    'delta_hsi': '#12c259',
+    'bic1': '#17f9ff',
+    'bic2': '#0ab1b7',
+    'pac': '#19d98c',
+    'baseline_line': '#1f382f',
+    'window_fill': '#0c261b',
+    'off_harmonic': '#1a4d37'
+}
+
+SPIRITED_SPEC_CMAP = ListedColormap([
+    '#0b2e3e', '#274c77', '#5c7ea5', '#b5c9d6', '#f0efeb', '#f2cc8f', '#e07a5f'
+], name='spirited_spec')
+
+SPIRITED_COLORS = {
+    'fundamental': '#e07a5f',
+    'harm2': '#f2cc8f',
+    'harm3': '#81b29a',
+    'plv': '#3d405b',
+    'plv_mean': '#253047',
+    'delta_hsi': '#c8553d',
+    'bic1': '#f4a261',
+    'bic2': '#2a9d8f',
+    'pac': '#457b9d',
+    'baseline_line': '#6d6875',
+    'window_fill': '#f7ede2',
+    'off_harmonic': '#9a8c98',
+    'tick': '#3d405b',
+    'spine': '#b56576',
+    'panel_bg': '#fff5ed'
+}
+
+CYBERPUNK_SPEC_CMAP = ListedColormap([
+    '#04020c', '#0b1026', '#1a1f3b', '#311b5b', '#5b1a82', '#a100f2', '#ff00c8'
+], name='cyberpunk_spec')
+
+CYBERPUNK_COLORS = {
+    'fundamental': '#ff00e5',
+    'harm2': '#00dbff',
+    'harm3': '#ffe066',
+    'plv': '#7df9ff',
+    'plv_mean': '#4cc9f0',
+    'delta_hsi': '#ff4d8d',
+    'bic1': '#ff74ff',
+    'bic2': '#26ffc9',
+    'pac': '#bc6ff1',
+    'baseline_line': '#374151',
+    'window_fill': '#1b103d',
+    'off_harmonic': '#6d78ff',
+    'tick': '#f5f5ff',
+    'spine': '#2a2f4f'
+}
+
+GRAND_SPEC_CMAP = ListedColormap([
+      '#9f8bc2','#c48bad',  '#e7a8b6','#f7c6c7', '#f9dede','#d8e9f0','#87b7d8', 
+], name='grand_budapest_spec')
+
+GRAND_COLORS = {
+    'fundamental': '#d85a7f',
+    'harm2': '#f0c987',
+    'harm3': '#98c5dd',
+    'plv': '#6f5a8d',
+    'plv_mean': '#4f3558',
+    'delta_hsi': '#c774a6',
+    'bic1': '#f9a0b7',
+    'bic2': '#8ec5b3',
+    'pac': '#7a8cb8',
+    'baseline_line': '#c9b6c6',
+    'window_fill': '#fbe9dd',
+    'off_harmonic': '#b8cbe6',
+    'tick': '#4f3558',
+    'spine': '#ccb3c8',
+    'panel_bg': '#fff8f3'
+}
+
+BLADE_SPEC_CMAP = ListedColormap([
+     '#1b2335', '#473a67', '#6b559c', "#fdc1de", "#fc88c0", '#f45ca6'
+], name='blade_runner_spec').reversed()
+
+BLADE_COLORS = {
+    'fundamental': '#f45ca6',
+    'harm2': '#6fc0c9',
+    'harm3': '#94bcd2',
+    'plv': '#4c6eb6',
+    'plv_mean': '#2d3f63',
+    'delta_hsi': '#c25c9f',
+    'bic1': '#ff8ac0',
+    'bic2': '#54d8c7',
+    'pac': '#7fa7d9',
+    'baseline_line': '#3c4d68',
+    'window_fill': '#1a2335',
+    'off_harmonic': '#7a6ca6',
+    'tick': '#d4e4f0',
+    'spine': '#2a324a',
+    'panel_bg': '#101421'
+}
+
+MADMAX_SPEC_CMAP = ListedColormap([
+     '#0f141a', '#003a40',  '#005f6b', '#db6a05', '#b88b73',  '#fbd0b2', 
+], name='mad_max_spec')
+
+MADMAX_COLORS = {
+    'fundamental': '#ff8c42',
+    'harm2': '#f0c29a',
+    'harm3': '#5f8f94',
+    'plv': '#1f5966',
+    'plv_mean': '#15414b',
+    'delta_hsi': '#d96a29',
+    'bic1': '#f0a35c',
+    'bic2': '#5aa0a4',
+    'pac': '#c76a3b',
+    'baseline_line': '#4e4842',
+    'window_fill': '#22150f',
+    'off_harmonic': '#7c5c40',
+    'tick': '#f0ead6',
+    'spine': '#3a2a1f',
+    'panel_bg': '#16100c'
+}
+
+SUNSET_SPEC_CMAP = ListedColormap([
+    '#2d1b3d', '#512f5b', '#7a3f5c', '#b2554e', '#e17335', '#f29f4c', '#f9c784', '#ffd1a9'
+], name='sunset_spec')
+
+SUNSET_COLORS = {
+    'fundamental': '#ff7a59',
+    'harm2': '#f8c16d',
+    'harm3': '#6f9daf',
+    'plv': '#406d8a',
+    'plv_mean': '#2a4c5e',
+    'delta_hsi': '#e3625b',
+    'bic1': '#f5975c',
+    'bic2': '#4fb3c0',
+    'pac': '#9a6db5',
+    'baseline_line': '#5e4a5f',
+    'window_fill': '#2d1b3d',
+    'off_harmonic': '#c77966',
+    'tick': '#fde9d9',
+    'spine': '#5b394a',
+    'panel_bg': '#1f1328'
+}
+
+MATRIX_SPEC_CMAP = ListedColormap([
+    '#010403', '#082016', '#124a2c', '#1c733b', '#29a64c', '#48da6e', '#ffeb8a'
+], name='matrix_spec')
+
+MATRIX_COLORS = {
+    'fundamental': '#48da6e',
+    'harm2': '#29a64c',
+    'harm3': '#1c733b',
+    'plv': '#6fffb3',
+    'plv_mean': '#33d48a',
+    'delta_hsi': '#65ff91',
+    'bic1': '#72ffc7',
+    'bic2': '#33efc9',
+    'pac': '#ffd96f',
+    'baseline_line': '#1d3627',
+    'window_fill': '#010807',
+    'off_harmonic': '#308d5a',
+    'tick': '#dfffe6',
+    'spine': '#15311f',
+    'panel_bg': '#050a09'
+}
+
+STARNIGHT_SPEC_CMAP = ListedColormap([
+    '#05020a', '#0b1230', '#17204f', '#23336f', '#30518c', '#4073ab', '#5a94c3', '#86afd4'
+], name='star_night_spec')
+
+STARNIGHT_COLORS = {
+    'fundamental': '#8fa4ff',
+    'harm2': '#5fd4ff',
+    'harm3': '#b084ff',
+    'plv': '#4d5d9c',
+    'plv_mean': '#303f6f',
+    'delta_hsi': '#a36ef0',
+    'bic1': '#70a8ff',
+    'bic2': '#5be3d8',
+    'pac': '#4fe8a1',
+    'baseline_line': '#3b4766',
+    'window_fill': '#05020a',
+    'off_harmonic': '#6675b3',
+    'tick': '#dfe7ff',
+    'spine': '#1f2740',
+    'panel_bg': '#0b1021'
+}
+
+SUNRISE_SPEC_CMAP = ListedColormap([
+    '#1d123a', '#402263', '#703376', '#a9476f', '#e0635a', '#f29b61', '#ffe08a', '#fff3c6'
+], name='sunrise_spec')
+
+SUNRISE_COLORS = {
+    'fundamental': '#ff8e62',
+    'harm2': '#ffd277',
+    'harm3': '#7fb9e6',
+    'plv': '#4b6c8f',
+    'plv_mean': '#2f4863',
+    'delta_hsi': '#d96fa3',
+    'bic1': '#ffa94d',
+    'bic2': '#60d4c8',
+    'pac': '#f3a6a2',
+    'baseline_line': '#705872',
+    'window_fill': '#2b1a49',
+    'off_harmonic': '#9d6ebb',
+    'tick': '#fff4e4',
+    'spine': '#4f3c6a',
+    'panel_bg': '#1b1535'
+}
+
+FALL_SPEC_CMAP = ListedColormap([
+      "#4aaeff",'#8fd1ff', '#cce8ff', '#f9b650',  '#e35b2f', '#bf2633',
+], name='fall_foliage_spec')
+
+FALL_COLORS = {
+    'fundamental': '#f26a1b',
+    'harm2': '#ffba4a',
+    'harm3': '#d54a2a',
+    'plv': '#5ab0f0',
+    'plv_mean': '#2f7abf',
+    'delta_hsi': '#f16e2f',
+    'bic1': '#ffd162',
+    'bic2': '#6cbf4b',
+    'pac': '#fa709a',
+    'baseline_line': '#8a4a2f',
+    'window_fill': '#fff2da',
+    'off_harmonic': '#d97d35',
+    'tick': '#5c3614',
+    'spine': '#b8743a',
+    'panel_bg': '#fffaf0'
+}
+
+CLOUD_SPEC_CMAP = ListedColormap([
+    '#0c0d16', '#334458', '#6c879a', '#93abc0', '#c1d3e3', '#e9f1fb'
+], name='cloud_spec')   
+
+CLOUD_COLORS = {
+    'fundamental': '#6c8fbc',
+    'harm2': '#93abc0',
+    'harm3': '#4d6679',
+    'plv': '#8fb1dc',
+    'plv_mean': '#5877a3',
+    'delta_hsi': '#7ca3cf',
+    'bic1': '#b6cce3',
+    'bic2': '#5a86b6',
+    'pac': '#9cbdf0',
+    'baseline_line': '#3a4b60',
+    'window_fill': '#f0f4fa',
+    'off_harmonic': '#829bb7',
+    'tick': '#1f2433',
+    'spine': '#4a5d76',
+    'panel_bg': '#f7f9fd'
+}
+
+VALENTINE_SPEC_CMAP = ListedColormap([
+    '#faedf2', '#f7c7d7', '#f199b5', '#dc6a8c', '#b73a5f', '#88213d', '#5c0f24', '#2c020d'
+], name='valentine_spec')
+
+VALENTINE_COLORS = {
+    'fundamental': '#d8254f',
+    'harm2': '#ff7b9a',
+    'harm3': '#8f1a36',
+    'plv': '#f29ab4',
+    'plv_mean': '#651a2e',
+    'delta_hsi': '#c12b52',
+    'bic1': '#ffc1d1',
+    'bic2': '#7a2b3f',
+    'pac': '#ff4c73',
+    'baseline_line': '#3d0c1a',
+    'window_fill': '#fde1ea',
+    'off_harmonic': '#a43752',
+    'tick': '#3a0815',
+    'spine': '#721e34',
+    'panel_bg': '#fff6f9'
+}
+
+PALETTE_MAP = {
+    'sunrise': (SUNRISE_SPEC_CMAP, SUNRISE_COLORS),
+    'grand': (GRAND_SPEC_CMAP, GRAND_COLORS),
+    'grandbudapest': (GRAND_SPEC_CMAP, GRAND_COLORS),
+    'grand_budapest': (GRAND_SPEC_CMAP, GRAND_COLORS),
+    'starnight': (STARNIGHT_SPEC_CMAP, STARNIGHT_COLORS),
+    'star': (STARNIGHT_SPEC_CMAP, STARNIGHT_COLORS),
+    'sunset': (SUNSET_SPEC_CMAP, SUNSET_COLORS),
+    'life_aquatic': (LIFEAQUATIC_SPEC_CMAP, LIFEAQUATIC_COLORS),
+    'lifeaquatic': (LIFEAQUATIC_SPEC_CMAP, LIFEAQUATIC_COLORS),
+    'madmax': (MADMAX_SPEC_CMAP, MADMAX_COLORS),
+    'blade': (BLADE_SPEC_CMAP, BLADE_COLORS),
+    'bladerunner': (BLADE_SPEC_CMAP, BLADE_COLORS),
+    'matrix': (MATRIX_SPEC_CMAP, MATRIX_COLORS),
+    'fall': (FALL_SPEC_CMAP, FALL_COLORS),
+    'cloud': (CLOUD_SPEC_CMAP, CLOUD_COLORS),
+    'valentine': (VALENTINE_SPEC_CMAP, VALENTINE_COLORS),
+}
+
+
+def _resolve_palette(name: str):
+    key = str(name).lower().strip()
+    return PALETTE_MAP.get(key, PALETTE_MAP['sunrise'])
+
+GRAND_SPEC_CMAP = ListedColormap([
+    '#f9dede', '#f7c6c7', '#e7a8b6', '#c48bad', '#9f8bc2', '#87b7d8', '#d8e9f0'
+], name='grand_budapest_spec')
+
+GRAND_COLORS = {
+    'fundamental': '#d85a7f',
+    'harm2': '#f0c987',
+    'harm3': '#98c5dd',
+    'plv': '#6f5a8d',
+    'plv_mean': '#4f3558',
+    'delta_hsi': '#c774a6',
+    'bic1': '#f9a0b7',
+    'bic2': '#8ec5b3',
+    'pac': '#7a8cb8',
+    'baseline_line': '#c9b6c6',
+    'window_fill': '#fbe9dd',
+    'off_harmonic': '#b8cbe6',
+    'tick': '#4f3558',
+    'spine': '#ccb3c8',
+    'panel_bg': '#fff8f3'
+}
 
 
 @dataclass
@@ -2346,7 +2698,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     return fig
 
 
-def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
+def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, session_name, *, palette: str = 'sunrise'):
     TIME_COL = cfg.time_col
     FS = cfg.fs or _infer_fs(records, TIME_COL)
     t_all = np.asarray(records[TIME_COL], float)
@@ -2439,91 +2791,139 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     t_R = t_all[0] + t_R_rel
     R_smooth = smooth_sec(t_R, R_series, 0.3)
 
+    spec_cmap, colors = _resolve_palette(palette)
+    tick_color = colors.get('tick', '#222222')
+    panel_bg = colors.get('panel_bg', '#ffffff')
+    spine_color = colors.get('spine', tick_color)
+
     fig = plt.figure(figsize=(14, 12), dpi=160)
+    fig.patch.set_facecolor(panel_bg)
     gs = GridSpec(5, 1, height_ratios=[2.3, 1.6, 1.3, 1.2, 1.2], hspace=0.5)
-    # ax_badge = fig.add_subplot(gs[0])
     ax_spec = fig.add_subplot(gs[0])
     ax_env = fig.add_subplot(gs[1], sharex=ax_spec)
     ax_hsi = fig.add_subplot(gs[2], sharex=ax_spec)
     ax_bic = fig.add_subplot(gs[3], sharex=ax_spec)
     ax_pac = fig.add_subplot(gs[4], sharex=ax_spec)
 
-    extent = [t_spec[0], t_spec[-1], f_spec[0], f_spec[-1]]
-    im = ax_spec.imshow(spec_z, extent=extent, origin='lower', aspect='auto', cmap='Spectral_r', vmin=-3, vmax=3)
-    ax_spec.set_ylabel('Frequency (Hz)')
-    ax_spec.set_title('SR-focused spectrogram (row-z)')
-    for freq in (f1, f2, f3):
-        ax_spec.axhline(freq, color='white', linestyle='--', linewidth=1.0, alpha=0.8)
-    ax_spec.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
-    cbar = fig.colorbar(im, ax=ax_spec, pad=0.01, fraction=0.04)
-    cbar.set_label('z (per frequency)')
+    def _apply_sunrise_style(ax):
+        ax.set_facecolor(panel_bg)
+        ax.tick_params(colors=tick_color, which='both')
+        if ax.yaxis.label:
+            ax.yaxis.label.set_color(tick_color)
+        if ax.xaxis.label:
+            ax.xaxis.label.set_color(tick_color)
+        if ax.title:
+            ax.title.set_color(tick_color)
+        for spine in ax.spines.values():
+            spine.set_color(spine_color)
 
-    ax_env.plot(t_all, env1_z, label=f'{f1:.2f} Hz', color='tab:orange', linewidth=1.6)
-    ax_env.plot(t_all, env2_z, label=f'{f2:.2f} Hz', color='tab:green', linewidth=1.1)
-    ax_env.plot(t_all, env3_z, label=f'{f3:.2f} Hz', color='tab:purple', linewidth=1.1)
-    ax_env.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
-    ax_env.set_ylabel('Envelope z')
-    ax_env.set_title('Harmonic envelopes (z) with PLV')
-    ax_env.legend(loc='upper left', fontsize=8, frameon=False)
-    ax_env.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    for axis in (ax_env, ax_hsi, ax_bic, ax_pac):
+        _apply_sunrise_style(axis)
+
+    extent = [t_spec[0], t_spec[-1], f_spec[0], f_spec[-1]]
+    im = ax_spec.imshow(spec_z, extent=extent, origin='lower', aspect='auto', cmap=spec_cmap, vmin=-3, vmax=3)
+    ax_spec.set_facecolor(panel_bg)
+    ax_spec.set_ylabel('Frequency (Hz)', color=tick_color)
+    ax_spec.set_title('SR-focused spectrogram (row-z)', color=tick_color)
+    ring_offset = getattr(cfg, 'ring_offset', 1.5)
+    for freq in (f1, f2, f3):
+        ax_spec.axhline(freq, color='white', linestyle='--', linewidth=1.0, alpha=0.85)
+        for delta in (-ring_offset, ring_offset):
+            ctrl = freq + delta
+            if f_spec[0] <= ctrl <= f_spec[-1]:
+                ax_spec.axhline(ctrl, color=colors['off_harmonic'], linestyle=':', linewidth=0.9, alpha=0.85)
+    ax_spec.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_spec.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+    for spine in ax_spec.spines.values():
+        spine.set_color(spine_color)
+    ax_spec.tick_params(colors=tick_color, which='both')
+    cbar = fig.colorbar(im, ax=ax_spec, pad=0.01, fraction=0.04)
+    cbar.ax.yaxis.set_tick_params(color=tick_color)
+    for label in cbar.ax.get_yticklabels():
+        label.set_color(tick_color)
+    cbar.set_label('z (per frequency)', color=tick_color)
+
+    ax_env.plot(t_all, env1_z, label=f'{f1:.2f} Hz', color=colors['fundamental'], linewidth=1.8)
+    ax_env.plot(t_all, env2_z, label=f'{f2:.2f} Hz', color=colors['harm2'], linewidth=1.3)
+    ax_env.plot(t_all, env3_z, label=f'{f3:.2f} Hz', color=colors['harm3'], linewidth=1.3)
+    ax_env.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_env.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+    ax_env.set_ylabel('Envelope z', color=tick_color)
+    ax_env.set_title('Harmonic envelopes (z) with PLV', color=tick_color)
+    leg_env = ax_env.legend(loc='upper left', fontsize=8, frameon=False)
+    if leg_env:
+        for text in leg_env.get_texts():
+            text.set_color(tick_color)
+    ax_env.axhline(0, color=colors['baseline_line'], linestyle='--', linewidth=0.8)
+
     ax_env2 = ax_env.twinx()
-    ax_env2.plot(plv_times, plv_series, linestyle='--', color='tab:blue', linewidth=1.4, label='PLV @ fundamental')
+    ax_env2.tick_params(colors=colors['plv_mean'], which='both')
+    ax_env2.yaxis.label.set_color(colors['plv_mean'])
+    ax_env2.spines['right'].set_color(spine_color)
+    ax_env2.plot(plv_times, plv_series, linestyle='--', color=colors['plv'], linewidth=1.4, label='PLV @ fundamental')
     ax_env2.set_ylabel('PLV')
     ax_env2.set_ylim(0, 1.05)
-    ax_env2.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
+    ax_env2.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_env2.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
     handles2, labels2 = ax_env2.get_legend_handles_labels()
     if handles2:
-        ax_env2.legend(handles2, labels2, loc='upper right', fontsize=8, frameon=False)
+        leg2 = ax_env2.legend(handles2, labels2, loc='upper right', fontsize=8, frameon=False)
+        for text in leg2.get_texts():
+            text.set_color(colors['plv_mean'])
 
     window_mask = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
     z_peak = float(np.nanmax(env1_z[window_mask])) if np.any(window_mask) else np.nan
     if np.any(window_mask):
         idx_peak = np.nanargmax(env1_z[window_mask])
         t_peak = t_all[window_mask][idx_peak]
-        ax_env.plot(t_peak, z_peak, marker='o', color='tab:orange')
+        ax_env.plot(t_peak, z_peak, marker='o', color=colors['fundamental'])
 
     plv_win_mask = (plv_times >= ign_win[0]) & (plv_times <= ign_win[1])
     plv_mean = float(np.nanmean(plv_series[plv_win_mask])) if np.any(plv_win_mask) else np.nan
     if np.isfinite(plv_mean):
-        ax_env2.axhline(plv_mean, color='tab:blue', linestyle=':', linewidth=1.0)
+        ax_env2.axhline(plv_mean, color=colors['plv_mean'], linestyle=':', linewidth=1.0)
 
-    ax_hsi.plot(t_all, delta_hsi, color='tab:red', linewidth=1.4)
-    ax_hsi.fill_between(t_all, 0, delta_hsi, where=delta_hsi >= 0, color='tab:red', alpha=0.2)
-    ax_hsi.axhline(0, color='gray', linestyle='--', linewidth=0.8)
-    ax_hsi.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
-    ax_hsi.set_ylabel('ΔHSI (a.u.)')
-    ax_hsi.set_title('Harmonic tightening (ΔHSI proxy)')
+    ax_hsi.plot(t_all, delta_hsi, color=colors['delta_hsi'], linewidth=1.5)
+    ax_hsi.fill_between(t_all, 0, delta_hsi, where=delta_hsi >= 0, color=colors['delta_hsi'], alpha=0.25)
+    ax_hsi.axhline(0, color=colors['baseline_line'], linestyle='--', linewidth=0.8)
+    ax_hsi.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_hsi.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+    ax_hsi.set_ylabel('ΔHSI (a.u.)', color=tick_color)
+    ax_hsi.set_title('Harmonic tightening (ΔHSI proxy)', color=tick_color)
 
-    colors = ['tab:cyan', 'tab:pink']
+    triad_colors = [colors['bic1'], colors['bic2']]
     bic_peaks = []
     for idx, key in enumerate(triad_keys):
         series = bic[key]
-        ax_bic.plot(t_bic, series, color=colors[idx % len(colors)], linewidth=1.3, label=key)
+        ax_bic.plot(t_bic, series, color=triad_colors[idx % len(triad_colors)], linewidth=1.3, label=key)
         win_mask = (t_bic >= ign_win[0]) & (t_bic <= ign_win[1])
         if np.any(win_mask):
             peak_idx = np.nanargmax(series[win_mask])
             abs_idx = np.flatnonzero(win_mask)[peak_idx]
-            ax_bic.plot(t_bic[abs_idx], series[abs_idx], marker='*', color=colors[idx % len(colors)], markersize=10)
+            ax_bic.plot(t_bic[abs_idx], series[abs_idx], marker='*', color=triad_colors[idx % len(triad_colors)], markersize=10)
             bic_peaks.append(float(series[abs_idx]))
-    ax_bic.set_ylabel('Bicoherence')
-    ax_bic.set_ylim(0, 1.05)
-    ax_bic.set_title('Triadic bicoherence')
-    ax_bic.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
-    ax_bic.legend(loc='upper right', fontsize=8, frameon=False)
+    ax_bic.set_ylabel('Bicoherence', color=tick_color)
+    ax_bic.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_bic.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+    leg_bic = ax_bic.legend(loc='upper right', fontsize=8, frameon=False)
+    if leg_bic:
+        for text in leg_bic.get_texts():
+            text.set_color(tick_color)
 
     pac_base_mask = (t_pac >= (ign_win[0] - pad)) & (t_pac < ign_win[0])
     pac_win_mask = (t_pac >= ign_win[0]) & (t_pac <= ign_win[1])
     pac_base = np.nanmean(pac_vals[pac_base_mask]) if np.any(pac_base_mask) else np.nan
     pac_win = np.nanmean(pac_vals[pac_win_mask]) if np.any(pac_win_mask) else np.nan
     delta_pac = pac_win - pac_base if np.isfinite(pac_win) and np.isfinite(pac_base) else np.nan
-    ax_pac.plot(t_pac, pac_vals, color='tab:purple', linewidth=1.4)
-    ax_pac.axvspan(ign_win[0], ign_win[1], color='gold', alpha=0.18)
-    ax_pac.axhline(pac_base, color='#888888', linestyle=':', linewidth=0.9) if np.isfinite(pac_base) else None
+    ax_pac.plot(t_pac, pac_vals, color=colors['pac'], linewidth=1.4)
+    ax_pac.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_pac.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+    ax_pac.axhline(pac_base, color=colors['baseline_line'], linestyle=':', linewidth=0.9) if np.isfinite(pac_base) else None
     if np.isfinite(pac_win):
-        ax_pac.axhline(pac_win, color='tab:purple', linestyle='--', linewidth=1.0)
-    ax_pac.set_ylabel('MVL')
-    ax_pac.set_xlabel('Time (s)')
-    ax_pac.set_title('θ→γ PAC (MVL)')
+        ax_pac.axhline(pac_win, color=colors['pac'], linestyle='--', linewidth=1.0)
+    ax_pac.set_ylabel('MVL', color=tick_color)
+    ax_pac.set_xlabel('Time (s)', color=tick_color)
+    ax_pac.set_title('θ→γ PAC (MVL)', color=tick_color)
 
     ax_spec.set_xlim(t0, t1)
     for ax in (ax_env, ax_hsi, ax_bic, ax_pac):
@@ -2549,7 +2949,7 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     # ax_badge.axis('off')
     # ax_badge.text(0.01, 0.5, ' | '.join(badge_parts), ha='left', va='center', fontsize=11, fontweight='bold')
 
-    fig.suptitle(f'Ignition SR signature {ign_win[0]}–{ign_win[1]} s\n{session_name}', fontsize=14,y=0.95)
+    fig.suptitle(f'Ignition SR signature {ign_win[0]}–{ign_win[1]} s\n{session_name}', fontsize=14, y=0.95, color=tick_color)
     return fig
 
 
