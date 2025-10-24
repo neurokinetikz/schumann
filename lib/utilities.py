@@ -139,8 +139,7 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
     if device == 'emotiv':
         df = pd.read_csv(csv_path, low_memory=False, header=header)
         df['Timestamp'] = np.arange(len(df)) / fs
-        # print(df.columns)
-        df.sort_values(by=['Timestamp']).reset_index(drop=True)
+        df = df.sort_values(by=['Timestamp']).reset_index(drop=True)
     else:
         df = pd.read_csv(csv_path, low_memory=False, header=0).sort_values(by=['timestamps']).reset_index(drop=True)
         df.rename(columns={'timestamps': 'Timestamp'}, inplace=True)
@@ -174,11 +173,20 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
     if df['Timestamp'].iloc[-1] > 1e6:
         df['Timestamp'] = df['Timestamp'] / 1000.0
 
+    # Trim leading/trailing samples to avoid edge artifacts from filtering
+    # trim_sec = 10.0
+    # duration = df['Timestamp'].iloc[-1]
+    # if duration > 2 * trim_sec:
+    #     mask = (df['Timestamp'] >= trim_sec) & (df['Timestamp'] <= (duration - trim_sec))
+    #     if mask.any():
+    #         df = df.loc[mask].reset_index(drop=True)
+    #         df['Timestamp'] = df['Timestamp'] - df['Timestamp'].iloc[0]
+
     # High-pass each electrode at 1 Hz and compute squared power
     for e in electrodes:
-        ch = col(e)
-        if ch not in df.columns:
-            continue
+        ch = e
+        # if ch not in df.columns:
+        #     continue
         s = df[ch].astype(float)
         # Handle NaNs by forward/backward filling before filtering
         s = s.interpolate(limit_direction='both')

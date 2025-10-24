@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 import os, json
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Tuple, Dict, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,6 +74,19 @@ def bandpass_safe(x: np.ndarray, fs: float, f1: float, f2: float, order=4) -> np
     ny = 0.5*fs
     b,a = signal.butter(order, [f1/ny, f2/ny], btype='band')
     return signal.filtfilt(b,a,x,axis=-1)
+
+
+def _sr_envelope_z_series(y: np.ndarray, fs: float, f0: float,
+                          half_bw: float, smooth_sec: float) -> np.ndarray:
+    """Envelope z-score for a monaural SR band."""
+    yb = bandpass_safe(y, fs, f0 - half_bw, f0 + half_bw)
+    env = np.abs(signal.hilbert(yb))
+    n_smooth = max(1, int(round(smooth_sec * fs)))
+    if n_smooth > 1:
+        w = np.hanning(n_smooth)
+        w /= w.sum()
+        env = np.convolve(env, w, mode='same')
+    return zscore(env, nan_policy='omit')
 
 
 def _scalar_bandwidth(val, default: float = 0.5) -> float:
@@ -153,6 +166,159 @@ def _build_virtual_sr(X: np.ndarray, fs: float, f0: float, bw: float, mode: str 
         raise ValueError("sr_reference must be 'auto-SSD' | 'auto-PLV' | 'auto-PCA'")
     return v, w
 
+
+def _msc_per_channel_vs_median(X: np.ndarray, fs: float, freqs: List[float], bw: float) -> List[float]:
+    """
+    Compute mean MSC across channels using chart-style method:
+    Each channel vs median reference, averaged across channels.
+
+    This matches the visualization MSC calculation in test.py::_msc_matrix().
+    """
+    n_ch = X.shape[0]
+    ref = np.nanmedian(X, axis=0)  # Median across channels as reference
+
+    msc_modes: List[float] = []
+    for f0 in freqs:
+        # Bandpass filter at target frequency
+        f_lo, f_hi = f0 - bw, f0 + bw
+        Xb = bandpass_safe(X, fs, f_lo, f_hi)
+        ref_b = bandpass_safe(ref, fs, f_lo, f_hi)
+
+        # Compute MSC for each channel vs median reference
+        msc_vals = []
+        for ci in range(n_ch):
+            ch = Xb[ci]
+            # Hilbert-based MSC (same as test.py::_msc_channel_to_reference)
+            z_ch = signal.hilbert(ch)
+            z_ref = signal.hilbert(ref_b)
+            num = np.abs(np.mean(z_ch * np.conj(z_ref))) ** 2
+            den = (np.mean(np.abs(z_ch) ** 2) * np.mean(np.abs(z_ref) ** 2)) + 1e-12
+            msc_vals.append(float(num / den))
+
+        # Average MSC across channels
+        mean_msc = float(np.nanmean(msc_vals)) if msc_vals else np.nan
+        msc_modes.append(mean_msc)
+
+    return msc_modes
+
+
+def _spectral_slope_during_event(X: np.ndarray, fs: float,
+                                   band: Tuple[float, float] = (3, 45),
+                                   exclude_centers: Optional[List[float]] = None,
+                                   exclude_bw: float = 0.6) -> float:
+    """
+    Compute mean 1/f spectral slope across channels during event.
+
+    Returns the spectral slope (beta) where Power ~ f^(-beta).
+    More negative values indicate steeper 1/f falloff.
+
+    Broadband artifacts flatten the slope (less negative).
+    True SR ignitions maintain or steepen the slope.
+    """
+    slopes = []
+    for ch in range(X.shape[0]):
+        f, P = signal.welch(X[ch], fs=fs, nperseg=min(4096, int(2*fs)))
+        mask = (f >= band[0]) & (f <= band[1])
+
+        # Exclude SR frequencies to isolate background 1/f
+        if exclude_centers:
+            for fc in exclude_centers:
+                mask &= ~((f >= fc - exclude_bw) & (f <= fc + exclude_bw))
+
+        if np.sum(mask) < 6:
+            continue
+
+        x = np.log10(f[mask] + 1e-12)
+        y = 10 * np.log10(P[mask] + 1e-20)
+
+        if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+            continue
+
+        slope, _ = np.polyfit(x, y, 1)
+        slopes.append(slope)
+
+    return float(np.nanmean(slopes)) if slopes else np.nan
+
+
+def _frequency_specificity_index(X: np.ndarray, fs: float,
+                                   sr_freqs: List[float],
+                                   bw: float = 0.5,
+                                   band: Tuple[float, float] = (3, 45)) -> float:
+    """
+    Compute Frequency Specificity Index (FSI).
+
+    FSI = power_in_SR_bands / total_power
+
+    High FSI (>0.4) → power concentrated at SR frequencies (true ignition)
+    Low FSI (<0.3) → broadband contamination (artifact)
+    """
+    X_mean = np.mean(X, axis=0)
+
+    # Total power in band
+    X_band = bandpass_safe(X_mean, fs, band[0], band[1])
+    P_total = np.mean(X_band**2)
+
+    # Power in SR bands
+    P_sr = 0.0
+    for f0 in sr_freqs:
+        X_sr = bandpass_safe(X_mean, fs, f0 - bw, f0 + bw)
+        P_sr += np.mean(X_sr**2)
+
+    FSI = P_sr / (P_total + 1e-12)
+    return float(np.clip(FSI, 0, 1))
+
+
+def _msc_bandwidth_specificity(X: np.ndarray, fs: float,
+                                 sr_freqs: List[float],
+                                 bw: float = 0.5,
+                                 offset_hz: float = 2.0) -> float:
+    """
+    Compute MSC Bandwidth Specificity Ratio (BSR).
+
+    BSR = msc_at_SR_freqs / msc_at_offset_freqs
+
+    High BSR (>2) → MSC specific to SR frequencies (true ignition)
+    Low BSR (<1.5) → MSC elevated across all frequencies (artifact)
+    """
+    ref = np.nanmedian(X, axis=0)
+
+    msc_sr_list = []
+    msc_off_list = []
+
+    for f0 in sr_freqs[:min(3, len(sr_freqs))]:  # Use first 3 harmonics
+        # MSC at SR frequency
+        X_sr = bandpass_safe(X, fs, f0 - bw, f0 + bw)
+        ref_sr = bandpass_safe(ref, fs, f0 - bw, f0 + bw)
+        msc_sr_ch = []
+        for ch in range(X.shape[0]):
+            z_ch = signal.hilbert(X_sr[ch])
+            z_ref = signal.hilbert(ref_sr)
+            num = np.abs(np.mean(z_ch * np.conj(z_ref))) ** 2
+            den = (np.mean(np.abs(z_ch)**2) * np.mean(np.abs(z_ref)**2)) + 1e-12
+            msc_sr_ch.append(num / den)
+        msc_sr_list.append(np.nanmean(msc_sr_ch))
+
+        # MSC at offset frequency (f0 + offset_hz)
+        f_off = f0 + offset_hz
+        if f_off + bw < fs / 2:  # Check Nyquist limit
+            X_off = bandpass_safe(X, fs, f_off - bw, f_off + bw)
+            ref_off = bandpass_safe(ref, fs, f_off - bw, f_off + bw)
+            msc_off_ch = []
+            for ch in range(X.shape[0]):
+                z_ch = signal.hilbert(X_off[ch])
+                z_ref = signal.hilbert(ref_off)
+                num = np.abs(np.mean(z_ch * np.conj(z_ref))) ** 2
+                den = (np.mean(np.abs(z_ch)**2) * np.mean(np.abs(z_ref)**2)) + 1e-12
+                msc_off_ch.append(num / den)
+            msc_off_list.append(np.nanmean(msc_off_ch))
+
+    if not msc_sr_list or not msc_off_list:
+        return np.nan
+
+    BSR = np.nanmean(msc_sr_list) / (np.nanmean(msc_off_list) + 1e-6)
+    return float(BSR)
+
+
 # ---------- Kuramoto R(t) & t0 detection (safer) ----------
 
 def _kuramoto_R_timeseries(X, fs, f_lo, f_hi, win_sec=1.0, step_sec=0.25, edge_sec=2.0, min_rms=1e-7):
@@ -189,24 +355,174 @@ def _detect_t0_from_R(times: np.ndarray, R: np.ndarray, thresh: float = 0.6) -> 
 
 # ---------- Latencies / propagation ----------
 
-def _channel_latencies(X: np.ndarray, fs: float, f_lo: float, f_hi: float,
-                       t0: float, pre: float = 2.0, post: float = 1.0, z_th: float = 2.0) -> np.ndarray:
+def _channel_latencies(
+    X: np.ndarray,
+    fs: float,
+    f_lo: float,
+    f_hi: float,
+    t0: float,
+    pre: float = 2.0,
+    post: float = 1.0,
+    z_th: float = 2.0,
+    *,
+    min_run_sec: float = 0.08,
+    smooth_sec: float = 0.10,
+    return_details: bool = False
+) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Return per-channel latency estimates (and optional diagnostics) near t0.
+
+    min_run_sec: require the z-threshold to hold for at least this duration.
+    smooth_sec : moving-average smoothing of the Hilbert envelope to suppress spikes.
+    """
     Xb = bandpass_safe(X, fs, f_lo, f_hi)
     amp = np.abs(signal.hilbert(Xb, axis=-1))
+
+    if smooth_sec and smooth_sec > 0:
+        n_smooth = max(1, int(round(smooth_sec * fs)))
+        if n_smooth > 1:
+            kernel = np.ones(n_smooth, dtype=float)
+            kernel /= kernel.sum()
+            amp = np.vstack([np.convolve(row, kernel, mode='same') for row in amp])
+
     n = X.shape[1]
-    t0_idx = int(round(t0*fs))
-    i0 = max(0, t0_idx - int(round(pre*fs)))
-    i1 = min(n, t0_idx + int(round(post*fs)))
-    base = amp[:, i0:t0_idx]
-    mu = base.mean(axis=1, keepdims=True)
-    sd = base.std(axis=1, keepdims=True) + 1e-12
-    z = (amp[:, i0:i1] - mu)/sd
+    t0_idx = int(np.clip(round(t0 * fs), 0, max(0, n - 1)))
+    pre_samp = int(round(pre * fs))
+    post_samp = int(round(post * fs))
+    i0 = max(0, t0_idx - pre_samp)
+    i1 = min(n, t0_idx + post_samp)
+    if i1 <= i0:
+        i1 = min(n, i0 + max(1, pre_samp + post_samp))
+
+    base = amp[:, i0:t0_idx] if t0_idx > i0 else amp[:, max(0, t0_idx - pre_samp):t0_idx]
+    if base.size == 0 or base.shape[1] < max(5, int(0.2 * fs)):
+        alt_start = max(0, t0_idx - max(pre_samp, int(0.5 * fs)))
+        base = amp[:, alt_start:t0_idx] if t0_idx > alt_start else amp[:, :max(1, t0_idx)]
+
+    mu = np.nanmedian(base, axis=1, keepdims=True)
+    mad = np.nanmedian(np.abs(base - mu), axis=1, keepdims=True)
+    sigma = 1.4826 * mad
+    fallback_sd = np.nanstd(base, axis=1, keepdims=True)
+    sigma = np.where(
+        (sigma <= 1e-9) | (~np.isfinite(sigma)),
+        fallback_sd + 1e-12,
+        sigma + 1e-12
+    )
+
+    window = amp[:, i0:i1]
+    z = (window - mu) / sigma
+
     lats = np.full(X.shape[0], np.nan)
+    rise_idx = np.full(X.shape[0], -1, dtype=int)
+    run_samples = max(1, int(round(min_run_sec * fs)))
+    ones = np.ones(run_samples, dtype=int)
+
     for ch in range(X.shape[0]):
-        idx = np.where(z[ch] >= z_th)[0]
-        if idx.size:
-            lats[ch] = (i0 + idx[0])/fs
+        row = z[ch]
+        if not np.any(np.isfinite(row)):
+            continue
+        mask = np.isfinite(row) & (row >= z_th)
+        idx_candidate = None
+        if np.any(mask):
+            if run_samples > 1 and mask.size >= run_samples:
+                conv = np.convolve(mask.astype(int), ones, mode='valid')
+                hits = np.flatnonzero(conv >= run_samples)
+                if hits.size:
+                    idx_candidate = int(hits[0])
+            if idx_candidate is None:
+                hits = np.flatnonzero(mask)
+                if hits.size:
+                    idx_candidate = int(hits[0])
+        if idx_candidate is not None:
+            lats[ch] = (i0 + idx_candidate) / fs
+            rise_idx[ch] = idx_candidate
+
+    peak_z = np.full(X.shape[0], np.nan)
+    rise_z = np.full(X.shape[0], np.nan)
+    for ch in range(X.shape[0]):
+        row = z[ch]
+        if np.any(np.isfinite(row)):
+            peak_z[ch] = float(np.nanmax(row))
+        if rise_idx[ch] >= 0 and rise_idx[ch] < row.size and np.isfinite(row[rise_idx[ch]]):
+            rise_z[ch] = float(row[rise_idx[ch]])
+
+    if return_details:
+        return lats, peak_z, rise_z
     return lats
+
+
+def _granger_bivariate_matrix(X: np.ndarray, maxlag: int = 6) -> np.ndarray:
+    """
+    Pairwise (time-domain) Granger causality using simple VAR fits.
+    Returns matrix F_{i<-j} normalized to 0..1.
+    """
+    n, T = X.shape
+    if T < 8 or n < 2:
+        return np.zeros((n, n))
+    maxlag = int(max(1, min(maxlag, T // 4)))
+    F = np.zeros((n, n))
+    for i in range(n):
+        yi = X[i]
+        for j in range(n):
+            if i == j:
+                continue
+            yj = X[j]
+            bestF = 0.0
+            for p in range(1, maxlag + 1):
+                Y = yi[p:]
+                if len(Y) <= (2 * p + 1):
+                    break
+                Phi_i = np.column_stack([yi[p - k:-k] for k in range(1, p + 1)])
+                Phi_ij = np.column_stack([Phi_i] + [yj[p - k:-k] for k in range(1, p + 1)])
+                try:
+                    beta_i = np.linalg.lstsq(Phi_i, Y, rcond=None)[0]
+                    beta_ij = np.linalg.lstsq(Phi_ij, Y, rcond=None)[0]
+                except np.linalg.LinAlgError:
+                    continue
+                rss_i = np.sum((Y - Phi_i @ beta_i) ** 2)
+                rss_ij = np.sum((Y - Phi_ij @ beta_ij) ** 2)
+                k_num = p
+                k_den = len(Y) - 2 * p
+                if k_den <= 0 or rss_ij <= 0:
+                    continue
+                Fp = ((rss_i - rss_ij) / k_num) / (rss_ij / k_den)
+                if np.isfinite(Fp) and Fp > bestF:
+                    bestF = Fp
+            F[i, j] = bestF
+    maxF = np.nanmax(F)
+    if maxF <= 0 or not np.isfinite(maxF):
+        return np.zeros((n, n))
+    return F / maxF
+
+
+def _directed_flow_scores(
+    X: np.ndarray,
+    fs: float,
+    f_lo: float,
+    f_hi: float,
+    *,
+    maxlag: int = 6
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute per-channel directed flow (in/out) using bivariate Granger within [f_lo,f_hi].
+    """
+    n, T = X.shape
+    if n < 2 or T < 8:
+        nan_vec = np.full(n, np.nan)
+        return nan_vec, nan_vec, np.zeros((n, n))
+
+    pad = max(0.2, 0.5 * (f_hi - f_lo))
+    f1 = max(0.1, f_lo - pad)
+    f2 = min(0.45 * fs, f_hi + pad)
+    X_band = bandpass_safe(X, fs, f1, f2)
+    X_band -= X_band.mean(axis=1, keepdims=True)
+    std = X_band.std(axis=1, keepdims=True) + 1e-12
+    X_norm = X_band / std
+
+    F = _granger_bivariate_matrix(X_norm, maxlag=maxlag)
+    denom = float(max(1, n - 1))
+    flow_out = np.nansum(F, axis=1) / denom
+    flow_in = np.nansum(F, axis=0) / denom
+    return flow_in, flow_out, F
 
 
 def _phase_gradient_directionality(X: np.ndarray, fs: float, f_lo: float, f_hi: float,
@@ -238,10 +554,21 @@ def _harmonic_stack_index_flexible(
     base_hz: float, base_bw_hz: float,
     harmonic_centers_hz: List[float], harmonic_bw_hz: float
 ) -> Tuple[float, float]:
+    """
+    Compute Harmonic Stack Index (HSI) and MaxH (strongest overtone frequency).
+
+    HSI = sum(overtone powers) / fundamental_power
+
+    Only overtones (not the fundamental) are included in the numerator to give
+    a true measure of harmonic vs fundamental dominance.
+    """
     pf = np.mean(bandpass_safe(x, fs, base_hz-base_bw_hz, base_hz+base_bw_hz)**2)
     powers = []
     centers = []
     for f0 in harmonic_centers_hz:
+        # Skip the fundamental frequency (only include overtones in HSI)
+        if abs(f0 - base_hz) < 1.0:  # If within 1 Hz of base, it's the fundamental
+            continue
         if f0 + harmonic_bw_hz >= fs/2.0:
             continue
         bh = bandpass_safe(x, fs, f0 - harmonic_bw_hz, f0 + harmonic_bw_hz)
@@ -297,16 +624,16 @@ def detect_ignitions_session(
     # --- 1) SR envelope z(t) & onsets (proposal via all eeg_channels) ---
     Y = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
     y = Y.mean(axis=0)  # or use median: np.median(Y, axis=0)
-    yb = bandpass_safe(y, fs, center_hz - half_bw_hz, center_hz + half_bw_hz)
-    env = np.abs(signal.hilbert(yb))
 
-    n_smooth = max(1, int(round(smooth_sec*fs)))
-    if n_smooth > 1:
-        w = np.hanning(n_smooth); w /= w.sum()
-        env_s = np.convolve(env, w, mode='same')
-    else:
-        env_s = env
-    z = zscore(env_s, nan_policy='omit')
+    sr_env_cache: Dict[Tuple[float, float], np.ndarray] = {}
+
+    def _get_sr_env_z(f0: float, bw: float) -> np.ndarray:
+        key = (float(np.round(f0, 5)), float(np.round(bw, 5)))
+        if key not in sr_env_cache:
+            sr_env_cache[key] = _sr_envelope_z_series(y, fs, f0, bw, smooth_sec)
+        return sr_env_cache[key]
+
+    z = _get_sr_env_z(center_hz, half_bw_hz)
     mask = z >= z_thresh
     on_idx = np.where(np.diff(mask.astype(int)) == 1)[0] + 1
     
@@ -383,6 +710,26 @@ def detect_ignitions_session(
     valid_bandwidths = [bw for _, bw in valid_pairs]
     hbw = valid_bandwidths[0] if valid_bandwidths else half_bw
 
+    base_idx = None
+    base_tolerance = max(half_bw_hz, 0.8)
+    for k, f0 in enumerate(valid_harmonics):
+        if abs(f0 - center_hz) <= base_tolerance:
+            base_idx = k
+            break
+
+    def _bandwidth_for_harmonic(idx: int) -> float:
+        if idx == 0:
+            if base_idx is not None and base_idx < len(valid_bandwidths):
+                return valid_bandwidths[base_idx]
+            return half_bw_hz
+        if not valid_bandwidths:
+            return hbw
+        if base_idx is None:
+            target_idx = max(0, min(len(valid_bandwidths) - 1, idx - 1))
+        else:
+            target_idx = max(0, min(len(valid_bandwidths) - 1, base_idx + idx))
+        return valid_bandwidths[target_idx]
+
     # --- Determine base guess from custom list (if provided) ---
     if harmonics_hz and len(harmonics_hz) and any(f < 10.0 for f in harmonics_hz):
         base_guess = float(min([f for f in harmonics_hz if f < 10.0]))
@@ -406,6 +753,8 @@ def detect_ignitions_session(
 
     import test, harmonics
 
+    event_windows: List[Tuple[float, float]] = []
+
     for (a, b) in ign:
 
         start_idx = int(a * fs)
@@ -419,13 +768,14 @@ def detect_ignitions_session(
         if i1 - i0 < int(2*fs):
             continue
         Xw = X[:, i0:i1]
+        max_modes = min(3, len(ignition_freqs))
 
         # virtual SR
         v_sr, w_sr = _build_virtual_sr(Xw, fs, ignition_freqs[0], half_bw_hz, mode=sr_reference)
 
         # t0 from SR1 band
         f_lo, f_hi = ignition_freqs[0] - half_bw_hz, ignition_freqs[0] + half_bw_hz
-        tR_ev, R_ev = _kuramoto_R_timeseries(Xw, fs, f_lo, f_hi, win_sec=0.5, step_sec=0.05)
+        tR_ev, R_ev = _kuramoto_R_timeseries(Xw, fs, f_lo, f_hi, win_sec=2.5, step_sec=0.001)
         tR_ev = tR_ev + a
         t0_net = _detect_t0_from_R(tR_ev, R_ev, thresh=0.6)
         if not np.isfinite(t0_net):
@@ -437,9 +787,131 @@ def detect_ignitions_session(
         zR_peak_5s = zR_max_ev
 
         # latencies & spread
-        lats = _channel_latencies(X, fs, f_lo, f_hi, t0_net, pre=2.0, post=1.0, z_th=2.0)
-        seed_idx = int(np.nanargmin(lats)) if np.any(np.isfinite(lats)) else 0
+        lats, peak_z_per_ch, rise_z_per_ch = _channel_latencies(
+            X,
+            fs,
+            f_lo,
+            f_hi,
+            t0_net,
+            pre=2.0,
+            post=1.0,
+            z_th=2.0,
+            min_run_sec=0.12,
+            smooth_sec=0.12,
+            return_details=True
+        )
+
+        flow_in, flow_out, flow_mat = _directed_flow_scores(Xw, fs, f_lo, f_hi, maxlag=6)
+        flow_net = flow_out - flow_in
+        flow_roles = np.array(['ambiguous'] * len(eeg_channels), dtype=object)
+        if np.any(np.isfinite(flow_out)) or np.any(np.isfinite(flow_in)):
+            max_out = np.nanmax(flow_out) if np.any(np.isfinite(flow_out)) else np.nan
+            max_in = np.nanmax(flow_in) if np.any(np.isfinite(flow_in)) else np.nan
+            if not np.isfinite(max_out) or max_out <= 0:
+                out_norm = np.zeros_like(flow_out)
+            else:
+                out_norm = flow_out / (max_out + 1e-12)
+            if not np.isfinite(max_in) or max_in <= 0:
+                in_norm = np.zeros_like(flow_in)
+            else:
+                in_norm = flow_in / (max_in + 1e-12)
+            gen_out_min = 0.55
+            gen_in_max = 0.35
+            hub_out_min = 0.50
+            hub_in_margin = 0.05
+            prop_in_min = 0.45
+            prop_out_max = 0.25
+            for ch_idx in range(len(flow_roles)):
+                if not np.isfinite(out_norm[ch_idx]) and not np.isfinite(in_norm[ch_idx]):
+                    continue
+                o = out_norm[ch_idx] if np.isfinite(out_norm[ch_idx]) else 0.0
+                i = in_norm[ch_idx] if np.isfinite(in_norm[ch_idx]) else 0.0
+                if (o >= gen_out_min) and (i <= gen_in_max):
+                    flow_roles[ch_idx] = 'generator'
+                elif (o >= hub_out_min) and (i >= max(0.0, o - hub_in_margin)):
+                    flow_roles[ch_idx] = 'network-hub'
+                elif (i >= prop_in_min) and (o <= prop_out_max):
+                    flow_roles[ch_idx] = 'propagation'
+                else:
+                    flow_roles[ch_idx] = 'ambiguous'
+        else:
+            out_norm = np.zeros_like(flow_out)
+            in_norm = np.zeros_like(flow_in)
+
+        # Composite seed scoring approach: weight multiple metrics
+        def _compute_seed_score(idx: int) -> float:
+            """
+            Composite seed score combining temporal, causal, signal strength, and dynamics.
+            Higher score = more likely to be the true generator/source channel.
+            """
+            score = 0.0
+
+            # 1. Temporal component: earlier latency is better (40% weight)
+            if np.isfinite(lats[idx]):
+                delay = max(0.0, lats[idx] - t0_net)
+                # Exponential decay: 0.5s time constant
+                lat_score = np.exp(-delay / 0.5)
+            else:
+                lat_score = 0.0
+
+            # 2. Causal flow component: high outflow, low inflow (35% weight)
+            if np.isfinite(flow_out[idx]) and np.isfinite(flow_in[idx]):
+                flow_net = flow_out[idx] - flow_in[idx]
+                flow_sum = flow_out[idx] + flow_in[idx] + 1e-9
+                flow_net_norm = flow_net / flow_sum  # ranges [-1, 1]
+                flow_score = (1.0 + flow_net_norm) / 2.0  # map to [0, 1]
+            elif np.isfinite(flow_out[idx]):
+                # Only outflow known: use normalized outflow
+                flow_score = min(1.0, flow_out[idx] / (np.nanmax(flow_out) + 1e-9))
+            else:
+                flow_score = 0.0
+
+            # 3. Signal strength component: peak z-score (15% weight)
+            if np.isfinite(peak_z_per_ch[idx]):
+                # Normalize to [0,1] with saturation at z=10
+                signal_score = min(1.0, peak_z_per_ch[idx] / 10.0)
+            else:
+                signal_score = 0.0
+
+            # 4. Dynamics component: steep rise indicates generator (10% weight)
+            if np.isfinite(rise_z_per_ch[idx]):
+                # Normalize to [0,1] with saturation at rise_z=5
+                rise_score = min(1.0, rise_z_per_ch[idx] / 5.0)
+            else:
+                rise_score = 0.0
+
+            # Weighted combination
+            composite = (0.40 * lat_score +
+                        0.35 * flow_score +
+                        0.15 * signal_score +
+                        0.10 * rise_score)
+
+            return composite
+
+        # Compute scores for all channels
+        seed_scores = np.array([_compute_seed_score(i) for i in range(len(eeg_channels))])
+
+        # Select channel with highest composite score
+        if np.any(np.isfinite(seed_scores)) and np.nanmax(seed_scores) > 0:
+            seed_idx = int(np.nanargmax(seed_scores))
+        else:
+            # Fallback: use channel 0
+            seed_idx = 0
+
+        seed_flow_role = flow_roles[seed_idx]
+        seed_score_value = float(seed_scores[seed_idx]) if seed_idx < len(seed_scores) else 0.0
+
         seed_ch = eeg_channels[seed_idx]
+        seed_upper = seed_ch.upper()
+        hemis = 'central'
+        if any(seed_upper.startswith(prefix) for prefix in ('EEG.FP1','EEG.AF3','EEG.F3','EEG.F5','EEG.F7',
+                                                             'EEG.FC5','EEG.FC3','EEG.C3','EEG.C5','EEG.T7','EEG.T9',
+                                                             'EEG.CP5','EEG.P7','EEG.P9','EEG.P3','EEG.O1','EEG.FP3','EEG.PO7')):
+            hemis = 'left'
+        elif any(seed_upper.startswith(prefix) for prefix in ('EEG.FP2','EEG.AF4','EEG.F4','EEG.F6','EEG.F8',
+                                                               'EEG.FC6','EEG.FC4','EEG.C4','EEG.C6','EEG.T8','EEG.T10',
+                                                               'EEG.CP6','EEG.P8','EEG.P10','EEG.P4','EEG.O2','EEG.FP4','EEG.PO8')):
+            hemis = 'right'
         seed_roi = ('occipital' if seed_ch.upper().startswith(('EEG.O','EEG.PO')) else
                     'parietal'  if seed_ch.upper().startswith(('EEG.P','EEG.CP')) else
                     'temporal'  if seed_ch.upper().startswith(('EEG.T','EEG.TP')) else
@@ -521,10 +993,34 @@ def detect_ignitions_session(
         fs_auc = float(np.trapz(z_env[kL:kR], dx=1/fs)) if kR>kL else np.nan
 
 
+        # Chart-style MSC: per-channel vs median reference, averaged across channels
+        # This matches the visualization in six_panel_2() coherence chart
+        msc_modes = _msc_per_channel_vs_median(Xw, fs, ignition_freqs[:max_modes], half_bw_hz)
+        msc_v = msc_modes[0] if msc_modes else np.nan
+        msc_sr2_v = msc_modes[1] if len(msc_modes) > 1 else np.nan
+        msc_sr3_v = msc_modes[2] if len(msc_modes) > 2 else np.nan
 
-        fEv, CEv = signal.coherence(Xw.mean(axis=0), v_sr, fs=fs, nperseg=min(4096,int(2*fs)))
-        idxV = int(np.argmin(np.abs(fEv - ignition_freqs[0])))
-        msc_v = float(CEv[idxV])
+        # --- Artifact detection metrics ---
+        # Spectral slope (1/f exponent) during ignition
+        spectral_slope = _spectral_slope_during_event(
+            Xw, fs, band=(3, 45),
+            exclude_centers=ignition_freqs[:min(3, len(ignition_freqs))],
+            exclude_bw=half_bw_hz
+        )
+
+        # Frequency Specificity Index (power concentration at SR freqs)
+        freq_specificity = _frequency_specificity_index(
+            Xw, fs,
+            sr_freqs=ignition_freqs[:min(3, len(ignition_freqs))],
+            bw=half_bw_hz
+        )
+
+        # MSC Bandwidth Specificity Ratio (MSC sharpness at SR freqs)
+        msc_bandwidth_ratio = _msc_bandwidth_specificity(
+            Xw, fs,
+            sr_freqs=ignition_freqs[:min(3, len(ignition_freqs))],
+            bw=half_bw_hz
+        )
 
         # --- MSC peak vs average: compute around t0_net (±2.5 s) ---
         x_mean = Xw.mean(axis=0)
@@ -545,12 +1041,18 @@ def detect_ignitions_session(
         # SR envelope summaries from reference channel z(t)
         i0w = max(0, int(np.floor(a*fs)))
         i1w = min(len(z), int(np.ceil(b*fs)))
+        sr_z_max = sr_z_peak_t = sr_z_mean_pm5 = sr_z_mean_post5 = np.nan
+        sr2_z_max = sr3_z_max = np.nan
         if i1w - i0w > 0:
             seg_z = z[i0w:i1w]
-            k_rel = int(np.nanargmax(seg_z))
-            k_peak = i0w + k_rel
-            sr_z_max = float(seg_z[k_rel])
-            sr_z_peak_t = float(t[k_peak])
+            if np.all(np.isnan(seg_z)):
+                k_rel = 0
+                k_peak = i0w
+            else:
+                k_rel = int(np.nanargmax(seg_z))
+                k_peak = i0w + k_rel
+            sr_z_max = float(seg_z[k_rel]) if seg_z.size else np.nan
+            sr_z_peak_t = float(t[k_peak]) if k_peak < len(t) else np.nan
             t_on = a + window_sec/2.0
             k_on = int(np.argmin(np.abs(t - t_on)))
             kL2 = max(0, k_on - int(5*fs))
@@ -558,53 +1060,159 @@ def detect_ignitions_session(
             sr_z_mean_pm5 = float(np.nanmean(z[kL2:kR2])) if kR2>kL2 else np.nan
             k_postR = min(len(z), k_peak + int(5*fs))
             sr_z_mean_post5 = float(np.nanmean(z[k_peak:k_postR])) if k_postR>k_peak else np.nan
-        else:
-            sr_z_max = sr_z_peak_t = sr_z_mean_pm5 = sr_z_mean_post5 = np.nan
 
-        # PLV around ignition (±5 s) in fundamental band
+            # harmonic envelopes (SR2, SR3)
+            for mode_idx in range(1, max_modes):
+                bw_mode = _bandwidth_for_harmonic(mode_idx)
+                z_mode = _get_sr_env_z(ignition_freqs[mode_idx], bw_mode)
+                seg_mode = z_mode[i0w:i1w]
+                if seg_mode.size and np.any(np.isfinite(seg_mode)):
+                    peak_val = float(np.nanmax(seg_mode))
+                else:
+                    peak_val = np.nan
+                if mode_idx == 1:
+                    sr2_z_max = peak_val
+                elif mode_idx == 2:
+                    sr3_z_max = peak_val
+
+        # PLV around ignition (±5 s) in the first three SR bands
+        plv_mean_pm5 = plv_sr2_pm5 = plv_sr3_pm5 = np.nan
         try:
-            Xw_band = bandpass_safe(Xw, fs, ignition_freqs[0] - hbw, ignition_freqs[0] + hbw)
-            phases = np.angle(signal.hilbert(Xw_band, axis=-1))
-            plv_inst = np.abs(np.nanmean(np.exp(1j * phases), axis=0))
             t_event = t[i0:i1]
-            plv_mask = (t_event >= (t0_net - 5.0)) & (t_event <= (t0_net + 5.0))
-            plv_mean_pm5 = float(np.nanmean(plv_inst[plv_mask])) if np.any(plv_mask) else np.nan
+            if t_event.size:
+                plv_mask = (t_event >= (t0_net - 5.0)) & (t_event <= (t0_net + 5.0))
+            else:
+                plv_mask = np.array([], dtype=bool)
+            plv_modes: List[float] = []
+            for mode_idx in range(max_modes):
+                bw_mode = _bandwidth_for_harmonic(mode_idx)
+                f_center = ignition_freqs[mode_idx]
+                Xw_band = bandpass_safe(Xw, fs, f_center - bw_mode, f_center + bw_mode)
+                phases = np.angle(signal.hilbert(Xw_band, axis=-1))
+                plv_inst = np.abs(np.nanmean(np.exp(1j * phases), axis=0))
+                if plv_inst.size:
+                    if plv_mask.size and np.any(plv_mask):
+                        val = float(np.nanmean(plv_inst[plv_mask]))
+                    else:
+                        val = float(np.nanmean(plv_inst))
+                else:
+                    val = np.nan
+                plv_modes.append(val)
+            if plv_modes:
+                plv_mean_pm5 = plv_modes[0]
+            if len(plv_modes) > 1:
+                plv_sr2_pm5 = plv_modes[1]
+            if len(plv_modes) > 2:
+                plv_sr3_pm5 = plv_modes[2]
         except Exception:
-            plv_mean_pm5 = np.nan
+            pass
 
-        # label
-        if (fs_z >= 3.0) and (HSI >= 0.2):
-            type_label = 'fundamental-led'
-        elif (fs_z < 2.0) and (HSI >= 0.5 or (np.isfinite(MaxH) and MaxH >= 6*center_hz-1.0)):
-            type_label = 'overtone-led'
+        # label: classify based on which harmonic has the strongest envelope
+        if np.isfinite(sr_z_max) and np.isfinite(sr2_z_max) and np.isfinite(sr3_z_max):
+            # Direct comparison of harmonic z-scores
+            z_scores = [sr_z_max, sr2_z_max, sr3_z_max]
+            max_idx = int(np.nanargmax(z_scores))
+
+            if max_idx == 0:  # SR1 (fundamental) is strongest
+                type_label = 'fundamental-led'
+            elif max_idx in (1, 2):  # SR2 or SR3 (overtones) are strongest
+                type_label = 'overtone-led'
+            else:
+                type_label = 'fundamental-led'  # fallback
         else:
-            pks, _ = signal.find_peaks(z_env, distance=int(1.0*fs), height=0.6*np.nanmax(z_env))
-            type_label = 'two-phase' if len(pks) >= 2 else 'fundamental-led'
+            # Fallback to old logic if harmonic z-scores not available
+            if (fs_z >= 3.0) and (HSI >= 0.2):
+                type_label = 'fundamental-led'
+            elif (fs_z < 2.0) and (HSI >= 0.5 or (np.isfinite(MaxH) and MaxH >= 6*center_hz-1.0)):
+                type_label = 'overtone-led'
+            else:
+                pks, _ = signal.find_peaks(z_env, distance=int(1.0*fs), height=0.6*np.nanmax(z_env))
+                type_label = 'two-phase' if len(pks) >= 2 else 'fundamental-led'
 
         
 
 
         rows.append({
-            't_start': a, 't_end': b, 'duration_s': float(b-a),
-            't0_net': t0_net, 'zR_max': zR_max_ev, 'zR_peak_±5s': zR_peak_5s,
-            'fs_z': fs_z, 'fs_auc': fs_auc, 'HSI': HSI, 'MaxH': MaxH, 'MaxH_overtone': MaxH_ov, 'PEL_sec': PEL,
-            'seed_ch': seed_ch, 'seed_roi': seed_roi, 'spread_time_sec': spread, 'SF': SF,
+            'session_name': session_name, 
+            't_start': a, 
+            'sr_z_peak_t': sr_z_peak_t,
+            't_end': b,
+            'duration_s': float(b-a),
+            'seed_ch': seed_ch, 
+            'seed_roi': seed_roi, 
+            'seed_hemisphere': hemis,
+            'seed_latency_s': float(lats[seed_idx]) if np.isfinite(lats[seed_idx]) else np.nan,
+            'seed_latency_offset_s': float(lats[seed_idx] - t0_net) if np.isfinite(lats[seed_idx]) and np.isfinite(t0_net) else np.nan,
+            'seed_peak_z': float(peak_z_per_ch[seed_idx]) if np.isfinite(peak_z_per_ch[seed_idx]) else np.nan,
+            'seed_rise_z': float(rise_z_per_ch[seed_idx]) if np.isfinite(rise_z_per_ch[seed_idx]) else np.nan,
+            'seed_flow_role': seed_flow_role,
+            'seed_flow_out': float(flow_out[seed_idx]) if np.isfinite(flow_out[seed_idx]) else np.nan,
+            'seed_flow_in': float(flow_in[seed_idx]) if np.isfinite(flow_in[seed_idx]) else np.nan,
+            'seed_flow_net': float(flow_net[seed_idx]) if np.isfinite(flow_net[seed_idx]) else np.nan,
+            'seed_flow_validation': bool(seed_flow_role == 'generator'),
+            'seed_score': seed_score_value,
+            'type_label': type_label,
+            'sr_z_max': sr_z_max,
+            'sr2_z_max': sr2_z_max,
+            'sr3_z_max': sr3_z_max,
+            'sr1': f"{ignition_freqs[0]:.2f}",
+            'sr2': f"{ignition_freqs[1]:.2f}" if len(ignition_freqs) > 1 else "nan",
+            'sr3': f"{ignition_freqs[2]:.2f}" if len(ignition_freqs) > 2 else "nan",
+            'sr4': f"{ignition_freqs[3]:.2f}" if len(ignition_freqs) > 3 else "nan",
             'msc_7p83_v': msc_v,
+            'msc_sr2_v': msc_sr2_v,
+            'msc_sr3_v': msc_sr3_v,
+            'plv_mean_pm5': plv_mean_pm5,
+            'plv_sr2_pm5': plv_sr2_pm5,
+            'plv_sr3_pm5': plv_sr3_pm5,
+            'HSI': HSI,
+            'spectral_slope': spectral_slope,
+            'freq_specificity': freq_specificity,
+            'msc_bandwidth_ratio': msc_bandwidth_ratio,
+
+            't0_net': t0_net, 'zR_max': zR_max_ev, 'zR_peak_±5s': zR_peak_5s,
+            'fs_z': fs_z, 'fs_auc': fs_auc, 'MaxH': MaxH, 'MaxH_overtone': MaxH_ov, 'PEL_sec': PEL,
+            'spread_time_sec': spread, 'SF': SF,
             # 'msc_7p83_v_peak': msc_peak, 'msc_7p83_v_mean_local': msc_mean_loc,
             # 'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
-            'sr_z_max': sr_z_max, 'sr_z_peak_t': sr_z_peak_t,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
             # 'pac_mvl': pac_mvl,
-            'plv_mean_pm5': plv_mean_pm5,
-            'type_label': type_label, 'session_name': session_name, 'base_est_hz': base_est_hz, 
-            'sr1': f"{ignition_freqs[0]:.2f}", 
-            'sr2': f"{ignition_freqs[1]:.2f}", 
-            'sr3': f"{ignition_freqs[2]:.2f}",
-            'sr4': f"{ignition_freqs[3]:.2f}",
+             'base_est_hz': base_est_hz, 
+            
             'ignition_freqs': ignition_freqs,
         })
+        event_windows.append((a, b))
 
     events = pd.DataFrame(rows)
+
+    raw_event_count = int(len(events)) if not events.empty else 0
+    filtered_out_count = 0
+    if not events.empty:
+        mask = pd.Series(True, index=events.index)
+        # if 'msc_7p83_v' in events.columns:
+        #     msc_vals = pd.to_numeric(events['msc_7p83_v'], errors='coerce')
+        #     mask &= msc_vals.isna() | (msc_vals >= 0.2)
+        # if 'HSI' in events.columns:
+        #     hsi_vals = pd.to_numeric(events['HSI'], errors='coerce')
+        #     mask &= hsi_vals.isna() | (hsi_vals <= 2.0)
+        kept = int(mask.sum())
+        filtered_out_count = raw_event_count - kept
+        events = events.loc[mask].copy()
+        event_windows = [event_windows[i] for i, keep in enumerate(mask.to_numpy()) if keep]
+        events.reset_index(drop=True, inplace=True)
+    else:
+        event_windows = []
+    # event_windows = []
+
+    ignition_windows_final = event_windows
+    ignition_windows_rounded_final = []
+    for (a, b) in ignition_windows_final:
+        sa = int(np.floor(a))
+        sb = int(np.ceil(b))
+        if sb > sa:
+            ignition_windows_rounded_final.append((sa, sb))
+    with open(ign_json_path, 'w') as f:
+        json.dump(ignition_windows_rounded_final, f)
 
     # --- 5) ETA of zR(t) aligned to t0_net ---
     if onsets.size and not events.empty and t_cent.size and zR.size:
@@ -629,7 +1237,8 @@ def detect_ignitions_session(
     plt.figure(figsize=(12.5,3))
     plt.plot(t[:len(z)], z, lw=1.0, label='SR env z (ref)')
     plt.axhline(z_thresh, color='k', ls='--', lw=1, label='z-thresh')
-    for (aa,bb) in ign: plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
+    for (aa,bb) in ignition_windows_final:
+        plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
     plt.xlabel('Time (s)'); plt.ylabel('SR z'); plt.title('SR envelope z(t) with detected ignitions')
     plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'sr_env_z.png'), dpi=140)
     if show: plt.show();
@@ -656,11 +1265,11 @@ def detect_ignitions_session(
     if verbose:
         print("\n=== Ignition Detection — Session Summary ===\n")
         # print(f"SR reference: {sr_channel}")
-        print(f"Ignition windows: {ignition_windows_rounded}")
         print("Estimated SR: ", np.round(harmonics_hz,2))
+        print(f"Ignition windows: {ignition_windows_rounded_final}")
         print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
         print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
-        print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
+        # print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
         print(f"Event SR mode: {sr_reference}")
         harm_src = 'custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'
         # print(f"PEL gamma band: {gamma_band[0]:.1f}–{gamma_band[1]:.1f} Hz; Harmonics (valid, {harm_src}): {np.round(valid_harmonics,3)}")
@@ -674,30 +1283,48 @@ def detect_ignitions_session(
 
         
 
-        n_events = int(len(events)) if not events.empty else 0
-        print(f"\nEvents detected: {n_events}")
-        if n_events > 0:
-            dur   = events['duration_s'].to_numpy()
-            srmax = events['sr_z_max'].to_numpy()
-            srpm5 = events['sr_z_mean_pm5'].to_numpy()
-            plvpm5 = events['plv_mean_pm5'].to_numpy() if 'plv_mean_pm5' in events.columns else np.array([])
-            # pacv   = events['pac_mvl'].to_numpy() if 'pac_mvl' in events.columns else np.array([])
-            msc_v  = events['msc_7p83_v'].to_numpy()  if 'msc_7p83_v'  in events.columns else np.array([])
-            msc_pk = events['msc_7p83_v_peak'].to_numpy() if 'msc_7p83_v_peak' in events.columns else np.array([])
-            # msc_sr = events['msc_7p83_sr'].to_numpy() if 'msc_7p83_sr' in events.columns else np.array([])
+        total_events = int(len(events)) if not events.empty else 0
+        print(f"\nEvents detected: {total_events}")
+        if filtered_out_count > 0:
+            print(f"Filtered out {filtered_out_count} candidate ignition(s) with msc_7p83_v < 0.2 or HSI > 2.0.")
+
+        if total_events > 0:
+            def col_vals(name: str, fill: float = np.nan) -> np.ndarray:
+                if name in events.columns:
+                    return pd.to_numeric(events[name], errors='coerce').to_numpy()
+                return np.full(total_events, fill, dtype=float)
+
+            dur   = col_vals('duration_s')
+            srmax = col_vals('sr_z_max', fill=0.0)
+            sr2max = col_vals('sr2_z_max', fill=0.0)
+            s3rmax = col_vals('sr3_z_max', fill=0.0)
+
+            srpm5 = col_vals('sr_z_mean_pm5')
+
+            plvpm5 = col_vals('plv_mean_pm5', fill=0.0)
+            plv_sr2_pm5 = col_vals('plv_sr2_pm5', fill=0.0)
+            plv_sr3_pm5 = col_vals('plv_sr3_pm5', fill=0.0)
+
+            msc_v  = col_vals('msc_7p83_v', fill=0.0)
+            msc_sr2_v  = col_vals('msc_sr2_v', fill=0.0)
+            msc_sr3_v  = col_vals('msc_sr3_v', fill=0.0)
 
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
             
-            # event-centric
-            fsz  = events['fs_z'].to_numpy()
-            HSIv = events['HSI'].to_numpy()
-            PELv = events['PEL_sec'].to_numpy()
-            spread= events['spread_time_sec'].to_numpy()
-            SFv   = events['SF'].to_numpy()
+            fsz  = col_vals('fs_z')
+            HSIv = col_vals('HSI', fill=0.0)
+            PELv = col_vals('PEL_sec')
+            spread= col_vals('spread_time_sec')
+            SFv   = col_vals('SF')
             seed_counts = events['seed_roi'].value_counts(dropna=True)
             type_counts = events['type_label'].value_counts(dropna=True)
+            flow_role_counts = events['seed_flow_role'].value_counts(dropna=True)
 
-            sr_score = srmax * msc_v * plvpm5 / (1+HSIv)
+            z_score = (0.618*srmax + 0.236*sr2max + 0.146*s3rmax)
+            msc_score = (0.618*msc_v + 0.236*msc_sr2_v + 0.146*msc_sr3_v)
+            plv_score = (0.618*plvpm5 + 0.236*plv_sr2_pm5 + 0.146*plv_sr3_pm5)
+
+            sr_score = z_score * msc_score * plv_score / (1 + HSIv)
             t_score = 1.0 + (2.0 - 1.0) * (1.0 - np.exp(-(dur - 20.0)/35.0))
             score = sr_score * t_score
 
@@ -705,36 +1332,64 @@ def detect_ignitions_session(
             events['t_score'] = t_score
             events['score'] = score
 
-            print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
-            print(f"  SR z max (ref)         — median [IQR]: {fmt_iqr(srmax)}")
-            print(f"  SR z mean (±5 s)       — median [IQR]: {fmt_iqr(srpm5)}")
-            print(f"  PLV mean (±5 s)        — median [IQR]: {fmt_iqr(plvpm5)}")
+            # print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
+            print(f"  SR1 z max (ref)        — median [IQR]: {fmt_iqr(srmax)}")
+            print(f"  SR2 z max (ref)        — median [IQR]: {fmt_iqr(sr2max)}")
+            print(f"  SR3 z max (ref)        — median [IQR]: {fmt_iqr(s3rmax)}")
             print(f"  MSC@~7.8 Hz (virtual)  — median [IQR]: {fmt_iqr(msc_v)}")
+            print(f"  PLV@~7.8 Hz (±5 s)     — median [IQR]: {fmt_iqr(plvpm5)}")
+            print(f"  Seed composite score   — median [IQR]: {fmt_iqr(events['seed_score'].to_numpy(dtype=float))}")
+            print(f"  Seed outflow score     — median [IQR]: {fmt_iqr(events['seed_flow_out'].to_numpy(dtype=float))}")
+            # if not flow_role_counts.empty:
+            #     flow_summary = ", ".join([f"{role}: {cnt} ({100.0*cnt/total_events:.0f}%)" for role, cnt in flow_role_counts.items()])
+            #     print(f"  Seed flow roles        — {flow_summary}")
+            # if 'seed_flow_validation' in events.columns:
+            #     val_mean = float(np.nanmean(events['seed_flow_validation'].astype(float)))
+            #     if np.isfinite(val_mean):
+            #         print(f"  Flow-validated seeds    — {100.0*val_mean:.0f}% generator-classified")
+            
             # print(f"  PAC MVL (θ–γ)          — median [IQR]: {fmt_iqr(pacv)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
             print(f"  SR-Score               — median [IQR]: {fmt_iqr(sr_score)}")
-            print(f"  T-Score                — median [IQR]: {fmt_iqr(t_score)}")
-            print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
+            # print(f"  T-Score                — median [IQR]: {fmt_iqr(t_score)}")
+            # print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
             print(f"  Coverage of recording  — {rec_cov:.2f}%")
             
             # print("\n— Event-centric metrics —")
             # print(f"  FS z (SR1)             — median [IQR]: {fmt_iqr(fsz)}")
             # # print(f"  PEL Γ→θ lag (s)        — median [IQR]: {fmt_iqr(PELv)}")
-            # print(f"  Seed ROI distribution  — ", ",".join([f"{k}: {int(v)} ({100.0*v/n_events:.0f}%)" for k,v in seed_counts.items()]))
+            # print(f"  Seed ROI distribution  — ", ",".join([f"{k}: {int(v)} ({100.0*v/total_events:.0f}%)" for k,v in seed_counts.items()]))
             # print(f"  Spread time (s)        — median [IQR]: {fmt_iqr(spread)}")
             # print(f"  Synchronized fraction  — median [IQR]: {fmt_iqr(SFv)}")
             
-
-            # Top tables (SR z, FS z, HSI)
             try:
-                top_by_srz = events.sort_values('score', ascending=False)
-                cols2 = [c for c in ['t_start','t_end','duration_s','sr_z_max','sr_z_mean_pm5','msc_7p83_v','plv_mean_pm5','HSI',
-                                        'fs_z','type_label','seed_roi','seed_ch','sr1','sr2','sr3','sr4','sr_score','t_score','score'] if c in events.columns]
-                print("\nTop events by Score (sr_z_max * msc_7p83_v * plv_mean_pm5 * t_score / (1 + HSI):")
-                print(top_by_srz[cols2].to_string(index=False, justify='center'))
+                top_by_srz = events.sort_values('sr_score', ascending=False)
+                cols2 = [c for c in ['t_start','t0_net','sr_z_peak_t','t_end','duration_s',
+                                     'type_label','seed_hemisphere','seed_roi','seed_ch','seed_score',
+                                    #  'seed_flow_out','seed_flow_in',
+                                     'sr1','sr2','sr3','sr4',
+                                     
+                                     'sr_z_max','sr2_z_max','sr3_z_max',
+                                     'msc_7p83_v','msc_sr2_v','msc_sr3_v',
+                                     'plv_mean_pm5','plv_sr2_pm5','plv_sr3_pm5',
+                                     'HSI',
+                                     'sr_score'] if c in events.columns]
+                df_display = top_by_srz[cols2].copy()
+                num_cols = df_display.select_dtypes(include=[np.number]).columns
+                for col in num_cols:
+                    if col in ['t_start','t_end','duration_s']:
+                        df_display[col] = df_display[col].apply(lambda v: f"{v:.0f}" if pd.notnull(v) else "nan")
+                    else:
+                        df_display[col] = df_display[col].apply(lambda v: f"{v:.2f}" if pd.notnull(v) else "nan")
+                print("\nTop events by Score (sr_z_max * msc * plv / (1 + HSI)):")
+                print(df_display.to_string(index=False, justify='center'))
             except Exception:
                 pass
 
+            print("")
+        else:
+            if raw_event_count > 0:
+                print("No events pass the display filter.")
             print("")
         # print(f"\nFiles written to: {out_dir}")
         # print("  - sr_env_z.png, R_timeseries.png, ETA_zR.png, MaxH_hz_distribution.png")
@@ -743,8 +1398,8 @@ def detect_ignitions_session(
     result = {
         'events': events,
         'summary': summary,
-        'ignition_windows': ign,
-        'ignition_windows_rounded': ignition_windows_rounded,
+        'ignition_windows': ignition_windows_final,
+        'ignition_windows_rounded': ignition_windows_rounded_final,
         'ignition_windows_path': ign_json_path,
         'fs': fs,
         't_R': t_cent,
@@ -762,7 +1417,7 @@ def detect_ignitions_session(
         'harmonics_used_hz': np.array(valid_harmonics, dtype=float),
         'harmonics_source': ('custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples')
     }
-    return result, ignition_windows_rounded
+    return result, ignition_windows_rounded_final
 
 # -----------------------------
 # Plotting helpers: PSD & RBP
