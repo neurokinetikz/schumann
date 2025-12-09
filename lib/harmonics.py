@@ -1383,6 +1383,7 @@ def estimate_session_sr_harmonics(records, electrodes, fs, canonical_harmonics=[
         fs: Sampling frequency (Hz).
         canonical_harmonics: List of canonical SR harmonic frequencies to estimate.
         search_band: Frequency search range around each canonical harmonic (± Hz).
+                     Can be a scalar (same for all) or list (one per harmonic).
 
     Returns:
         List of estimated harmonic frequencies, matching canonical harmonics order.
@@ -1399,10 +1400,21 @@ def estimate_session_sr_harmonics(records, electrodes, fs, canonical_harmonics=[
 
     avg_psd = np.mean(psds, axis=0)
 
+    # Convert search_band to list (support both scalar and list inputs)
+    search_band_arr = np.atleast_1d(search_band)
+    if search_band_arr.size == 1:
+        # Single value: use for all harmonics
+        search_bands = [float(search_band_arr[0])] * len(canonical_harmonics)
+    else:
+        # List: must match canonical_harmonics length
+        if search_band_arr.size != len(canonical_harmonics):
+            raise ValueError(f"search_band list length ({search_band_arr.size}) must match canonical_harmonics length ({len(canonical_harmonics)})")
+        search_bands = [float(x) for x in search_band_arr]
+
     # Estimate harmonics based on canonical values
     harmonics_freqs = []
-    for canonical_freq in canonical_harmonics:
-        harmonic_mask = (freqs >= canonical_freq - search_band) & (freqs <= canonical_freq + search_band)
+    for canonical_freq, band in zip(canonical_harmonics, search_bands):
+        harmonic_mask = (freqs >= canonical_freq - band) & (freqs <= canonical_freq + band)
         if np.any(harmonic_mask):
             harmonic_idx = np.argmax(avg_psd[harmonic_mask])
             harmonic_freq = freqs[harmonic_mask][harmonic_idx]

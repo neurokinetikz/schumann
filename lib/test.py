@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.colors import ListedColormap
 
-from typing import Any, Dict, Optional, Sequence,Tuple, List, Iterable
+from typing import Any, Dict, Optional, Sequence, Tuple, List, Iterable, Union
 from scipy.signal import stft, firwin, filtfilt, detrend, savgol_filter, hilbert, stft, welch, coherence
 
 from detect_ignition import _build_virtual_sr
@@ -41,11 +41,11 @@ LIFEAQUATIC_COLORS = {
     'bic2': '#2ec4b6',
     'pac': '#006d77',
     'baseline_line': '#6c757d',
-    'window_fill': '#f4e9c8',
+    'window_fill': "#d0d0d0",
     'off_harmonic': '#9aa7b1',
     'tick': '#0e1f33',
     'spine': '#1a3f5c',
-    'panel_bg': '#eef6fb'
+    'panel_bg': '#ffffff'
 }
 
 MATRIX_SPEC_CMAP = ListedColormap([
@@ -86,7 +86,7 @@ SPIRITED_COLORS = {
     'off_harmonic': '#9a8c98',
     'tick': '#3d405b',
     'spine': '#b56576',
-    'panel_bg': '#fff5ed'
+    'panel_bg': '#ffffff'
 }
 
 CYBERPUNK_SPEC_CMAP = ListedColormap([
@@ -107,7 +107,8 @@ CYBERPUNK_COLORS = {
     'window_fill': '#1b103d',
     'off_harmonic': '#6d78ff',
     'tick': '#f5f5ff',
-    'spine': '#2a2f4f'
+    'spine': '#2a2f4f',
+    'panel_bg': '#0a0514'  # Dark purple-black background
 }
 
 GRAND_SPEC_CMAP = ListedColormap([
@@ -129,7 +130,7 @@ GRAND_COLORS = {
     'off_harmonic': '#b8cbe6',
     'tick': '#4f3558',
     'spine': '#ccb3c8',
-    'panel_bg': '#fff8f3'
+    'panel_bg': "#ffffff"
 }
 
 BLADE_SPEC_CMAP = ListedColormap([
@@ -283,7 +284,7 @@ FALL_COLORS = {
     'off_harmonic': '#d97d35',
     'tick': '#5c3614',
     'spine': '#b8743a',
-    'panel_bg': '#fffaf0'
+    'panel_bg': '#ffffff'
 }
 
 CLOUD_SPEC_CMAP = ListedColormap([
@@ -305,7 +306,7 @@ CLOUD_COLORS = {
     'off_harmonic': '#829bb7',
     'tick': '#1f2433',
     'spine': '#4a5d76',
-    'panel_bg': '#f7f9fd'
+    'panel_bg': '#ffffff'
 }
 
 VALENTINE_SPEC_CMAP = ListedColormap([
@@ -327,33 +328,29 @@ VALENTINE_COLORS = {
     'off_harmonic': '#a43752',
     'tick': '#3a0815',
     'spine': '#721e34',
-    'panel_bg': '#fff6f9'
+    'panel_bg': '#ffffff'
 }
 
 PALETTE_MAP = {
+    'sunset': (SUNSET_SPEC_CMAP, SUNSET_COLORS),
     'sunrise': (SUNRISE_SPEC_CMAP, SUNRISE_COLORS),
     'grand': (GRAND_SPEC_CMAP, GRAND_COLORS),
-    'grandbudapest': (GRAND_SPEC_CMAP, GRAND_COLORS),
-    'grand_budapest': (GRAND_SPEC_CMAP, GRAND_COLORS),
-    'starnight': (STARNIGHT_SPEC_CMAP, STARNIGHT_COLORS),
     'star': (STARNIGHT_SPEC_CMAP, STARNIGHT_COLORS),
-    'sunset': (SUNSET_SPEC_CMAP, SUNSET_COLORS),
-    'life_aquatic': (LIFEAQUATIC_SPEC_CMAP, LIFEAQUATIC_COLORS),
-    'lifeaquatic': (LIFEAQUATIC_SPEC_CMAP, LIFEAQUATIC_COLORS),
+    'aquatic': (LIFEAQUATIC_SPEC_CMAP, LIFEAQUATIC_COLORS),
     'madmax': (MADMAX_SPEC_CMAP, MADMAX_COLORS),
     'blade': (BLADE_SPEC_CMAP, BLADE_COLORS),
-    'bladerunner': (BLADE_SPEC_CMAP, BLADE_COLORS),
     'matrix': (MATRIX_SPEC_CMAP, MATRIX_COLORS),
     'fall': (FALL_SPEC_CMAP, FALL_COLORS),
     'cloud': (CLOUD_SPEC_CMAP, CLOUD_COLORS),
     'valentine': (VALENTINE_SPEC_CMAP, VALENTINE_COLORS),
     'spirited': (SPIRITED_SPEC_CMAP, SPIRITED_COLORS),
+    'cyberpunk': (CYBERPUNK_SPEC_CMAP, CYBERPUNK_COLORS),
 }
 
 
 def _resolve_palette(name: str):
     key = str(name).lower().strip()
-    return PALETTE_MAP.get(key, PALETTE_MAP['sunrise'])
+    return PALETTE_MAP.get(key, PALETTE_MAP['matrix'])
 
 GRAND_SPEC_CMAP = ListedColormap([
     '#f9dede', '#f7c6c7', '#e7a8b6', '#c48bad', '#9f8bc2', '#87b7d8', '#d8e9f0'
@@ -388,7 +385,7 @@ class FeaturePackCfg:
     spec_win: float = 1.5
     spec_ovl: float = 0.8
     sr_centers: Tuple[float,float,float] = (7.83, 14.3, 20.8)
-    bw_hz: float = 0.5
+    bw_hz: Union[float, Sequence[float]] = 0.5  # Can be scalar or array (one per ladder frequency)
     ladder: Tuple[float,...] = (7.83, 14.3, 20.8, 27.3, 33.8, 40.3, 46.8, 53.3)
     ladder_bw: float = 0.6
 
@@ -513,6 +510,8 @@ class PackProvider(BaseProvider):
 
 def _slice_spec_to_window(spec, window, min_cols=20):
     """Return (tW, fW, SW) for the window. If the mask is too small, widen to nearest columns."""
+    if spec is None:
+        raise ValueError(f"Spectrogram is None - cannot slice to window {window}")
     tS, fS, S = spec
     m = (tS >= window[0]) & (tS <= window[1])
     idx = np.where(m)[0]
@@ -781,7 +780,7 @@ def sanity(pack):
         "hsi_min":  float(np.nanmin(hsi)) if hsi.size else np.nan,
         "hsi_max":  float(np.nanmax(hsi)) if hsi.size else np.nan,
     }
-    print(out)
+    # print(out)
     return out
 
 def _bp_hilbert_env_z(X, fs, f0, bw=0.5):
@@ -1258,7 +1257,9 @@ def plot_ignition_window_report(
     centers=[7.8,14.3,20.8], bw=0.5,
     debug=False,
     session_name=None,
-    phases=None                       # Optional pre-computed phases dict
+    phases=None,                      # Optional pre-computed phases dict
+    bic_triads=None,                  # Optional triadic bicoherence dict {label: timeseries}
+    t_bic=None                        # Optional bicoherence time axis
 ):
     
     _fnd = "{:.2f}".format(centers[0]) 
@@ -1307,40 +1308,70 @@ def plot_ignition_window_report(
     
     # PANEL A: SPECTROGRAM ============
     axA = fig.add_subplot(gs[0, 0])
-    # tW, fW, SW = window_spec_median(_records, (t.min(), t.max()), channels=electrodes, fs=128, time_col='Timestamp')
-    # tW, fW, SW = provider.spectrogram_for_window(t.min(), t.max())
-    tW, fW, SW = _slice_spec_to_window(provider.spectrogram_for_window(t.min(), t.max()), (t.min(), t.max()), min_cols=20)
+    # Try to get spectrogram from provider, with fallback
+    spec = provider.spectrogram_for_window(t.min(), t.max())
+    if spec is None:
+        spec = provider.spectrogram()
+    if spec is None:
+        # Last resort: compute on the fly
+        spec = window_spec_median(_records, (t.min(), t.max()), channels=electrodes, fs=128, time_col='Timestamp')
+    tW, fW, SW = _slice_spec_to_window(spec, (t.min(), t.max()), min_cols=20)
     
     # row-wise robust-z in dB
     Zdb = 10*np.log10(np.maximum(SW, 1e-12))
     med = np.median(Zdb, axis=1, keepdims=True)
     mad = np.median(np.abs(Zdb - med), axis=1, keepdims=True) + 1e-12
     Z   = (Zdb - med) / (1.4826*mad)
-    im = axA.pcolormesh(tW, fW, Z, shading='auto'); 
-    im.set_clim(-3, 3)
-        
-    axA.set_ylabel('Hz'); axA.set_title('SR Spectrogram (2–60 Hz)')
-    axA.set_xlabel('s')
-    annotate_phases(axA, phases, *axA.get_ylim())
+
+    # Use imshow with interpolation for smoother rendering
+    extent = [tW[0], tW[-1], fW[0], fW[-1]]
+    im = axA.imshow(Z, extent=extent, origin='lower', aspect='auto',
+                    vmin=-3, vmax=3, interpolation='lanczos')
+
+    # Add subtle horizontal lines at SR harmonics
+    for freq in centers:
+        if fW[0] <= freq <= fW[-1]:
+            axA.axhline(freq, color='white', linestyle='--', linewidth=0.8, alpha=0.6)
+
+    axA.set_ylabel('Hz'); axA.set_title('SR Spectrogram (2-25 Hz)')
+    annotate_phases(axA, phases, *axA.get_ylim(), show_labels=False, show_shading=False)
 
 
     # # PANEL B: HARMONIC PIANO ROLL ============
     axB = fig.add_subplot(gs[0,1])
-    
-    # # Use the exact spectrogram used in Panel A
-    tW, fW, SW = _slice_spec_to_window(provider.spectrogram_for_window(t.min(), t.max()),
-                                   (t.min(), t.max()), min_cols=20)
 
-    # Plot
-    PR = np.vstack([zf_z, z2_z, z3_z])
+    # # Use the exact spectrogram used in Panel A (with fallback for end-of-session windows)
+    spec_b = provider.spectrogram_for_window(t.min(), t.max())
+    if spec_b is None:
+        spec_b = provider.spectrogram()
+    if spec_b is None:
+        # Last resort: compute on the fly
+        spec_b = window_spec_median(_records, (t.min(), t.max()), channels=electrodes, fs=128, time_col='Timestamp')
+    tW_b, fW_b, SW_b = _slice_spec_to_window(spec_b, (t.min(), t.max()), min_cols=20)
+
+    # Build envelope z-scores for all harmonics in centers
+    # First 3 from provider (already computed), rest from spectrogram
+    harmonic_envelopes = [zf_z, z2_z, z3_z]
+    for i in range(3, len(centers)):
+        # Extract envelope for harmonic i+1 from spectrogram
+        z_h_raw = bandtrace_from_spec(tW_b, fW_b, SW_b, centers[i], bw=bw)
+        # Interpolate to match provider's time axis
+        z_h = np.interp(t, tW_b, z_h_raw)
+        harmonic_envelopes.append(z_h)
+
+    # Stack all harmonics into piano roll
+    PR = np.vstack(harmonic_envelopes)
+    n_harmonics = len(centers)
     im = axB.imshow(PR, origin='lower', aspect='auto',
-                extent=[t.min(), t.max(), 0.5, 3.5], vmin=-3, vmax=3)
+                extent=[t.min(), t.max(), 0.5, n_harmonics + 0.5], vmin=-3, vmax=3)
 
-    axB.set_yticks([1, 2, 3]); 
-    axB.set_yticklabels([f"1× ({_fnd})", f"2× ({_2nd})", f"3× ({_3rd})"])
+    # Dynamic yticks and labels for all harmonics
+    yticks = list(range(1, n_harmonics + 1))
+    yticklabels = [f"{i}× ({centers[i-1]:.2f})" for i in yticks]
+    axB.set_yticks(yticks)
+    axB.set_yticklabels(yticklabels)
     axB.set_title('Harmonic Piano‑Roll (envelope z)')
-    axB.set_xlabel('s')
-    annotate_phases(axB, phases, 0.5, len(centers) + 0.5)
+    annotate_phases(axB, phases, 0.5, n_harmonics + 0.5, show_labels=False, show_shading=False)
     fig.colorbar(im, ax=[axA, axB], pad=0.02, fraction=0.05).set_label('z')
 
     # window-robust-z + 150 ms smoothing (same as Panel B piano-roll)
@@ -1355,23 +1386,27 @@ def plot_ignition_window_report(
 
     # PANEL C: Fundamental & harmonics envelopes + PLV ===============
     axC = fig.add_subplot(gs[1, 0])
-    axC.plot(t, zf_z, label=f"z@{_fnd}", lw=1.5)
-    axC.plot(t, z2_z, label=f"z@{_2nd}", lw=1.3)
-    axC.plot(t, z3_z, label=f"z@{_3rd}", lw=1.3)
+    # Plot all harmonics with decreasing line width for higher harmonics
+    for i, z_env in enumerate(harmonic_envelopes):
+        harmonic_num = i + 1
+        freq = centers[i]
+        lw = max(1.0, 1.5 - i * 0.1)  # Decrease line width for higher harmonics
+        axC.plot(t, z_env, label=f"z@{freq:.2f}", lw=lw)
     axC.set_ylabel('z')
     # axC.set_ylim(-3.5, 3.5)
 
 
     axC2 = axC.twinx()
-    axC2.plot(t, provider.plv_fund(), label=f"PLV@{_fnd}", ls='--', lw=1.4, alpha=0.95)
+    axC2.plot(t, provider.plv_fund(), label=f"PLV@{centers[0]:.2f}", ls='--', lw=1.4, alpha=0.95)
     plo, phi = np.nanpercentile(plv, [1, 99])
     pad = 0.1 * (phi - plo + 1e-12)
     axC.set_title('Envelopes and PLV')
-    axC.set_xlabel('s'); 
-    axC.set_ylabel('z'); 
+    axC.set_ylabel('z');
     axC2.set_ylabel('PLV')
-    axC.legend(loc='upper left'); 
-    axC2.legend(loc='upper right')
+    leg_c = axC.legend(loc='upper left', fontsize=8)
+    leg_c.set_zorder(2000)
+    leg_c2 = axC2.legend(loc='upper right')
+    leg_c2.set_zorder(2000)
 
     annotate_phases(axC, phases, *axC.get_ylim())
 
@@ -1415,11 +1450,13 @@ def plot_ignition_window_report(
         axD.plot(t, ΔHSI - np.nanmedian(ΔHSI),ls="--", alpha=0.85, label="β (1/f slope)")
         # axD2.plot(t, beta, ls="--", alpha=0.85, label="β (1/f slope)")
         axD2.set_ylabel("β")
-        axD2.legend(loc='upper right')
+        leg_d2 = axD2.legend(loc='upper right')
+        leg_d2.set_zorder(2000)
 
     axD.set_title('Harmonic Tightening')
-    axD.set_xlabel('s'); axD.set_ylabel(ylab)
-    axD.legend(loc='upper left')
+    axD.set_ylabel(ylab)
+    leg_d = axD.legend(loc='upper left')
+    leg_d.set_zorder(2000)
 
     # 3) percentile or absolute y-limits
     mode, arg = hsi_ylim
@@ -1440,16 +1477,49 @@ def plot_ignition_window_report(
     _2nd = "{:.2f}".format(centers[1])
     _3rd = "{:.2f}".format(centers[2])
 
-    # Panel E: Focused bicoherence tiles
+    # Panel E: Triadic bicoherence
     axE = fig.add_subplot(gs[2, 0])
-    if (b77 is not None) and (b7_15 is not None):
+
+    # Use new triadic bicoherence if provided, otherwise fall back to provider data
+    if bic_triads is not None and len(bic_triads) > 0 and t_bic is not None:
+        # Generate distinguishable colors for any number of triads using colormap
+        n_triads = len(bic_triads)
+        if n_triads <= 10:
+            # Use tab10 colormap for up to 10 triads (distinct categorical colors)
+            cmap = plt.cm.get_cmap('tab10')
+            triad_colors = [cmap(i) for i in range(n_triads)]
+        else:
+            # Use hsv colormap for more than 10 triads
+            cmap = plt.cm.get_cmap('hsv')
+            triad_colors = [cmap(i / n_triads) for i in range(n_triads)]
+
+        for idx, (label, series) in enumerate(bic_triads.items()):
+            # Interpolate bicoherence onto provider time axis and smooth
+            series_interp = np.interp(t, t_bic, series, left=series[0], right=series[-1])
+            series_smooth = smooth_sec(t, series_interp, 0.5)  # 500ms smoothing
+
+            color = triad_colors[idx]
+            lw = max(1.1, 1.5 - idx * 0.1)  # Thicker lines for more important triads
+            axE.plot(t, series_smooth, label=label, color=color, linewidth=lw, alpha=0.9)
+
+        # Horizontal legend inside chart at top
+        ncol = min(5, n_triads)  # Max 4 columns for readability
+        leg = axE.legend(loc='upper center', ncol=ncol, fontsize=6, frameon=True)
+        if leg:
+            leg.get_frame().set_facecolor('white')
+            leg.get_frame().set_alpha(0.618)
+            leg.set_zorder(2000)  # Ensure legend is on top
+    elif (b77 is not None) and (b7_15 is not None):
+        # Fallback to old bicoherence data from provider
         axE.plot(t, b77, label=f"bic ({_fnd},{_fnd}→{_2nd})")
         axE.plot(t, b7_15, label=f"bic ({_fnd},{_2nd}→{_3rd})")
-        axE.legend(loc='upper right')
+        leg_e = axE.legend(loc='upper right')
+        leg_e.set_zorder(2000)
     else:
         axE.text(0.5, 0.5, 'Bicoherence not provided', transform=axE.transAxes, ha='center', va='center')
+
     axE.set_title('Bicoherence (SR triads)')
-    axE.set_xlabel('s')
+    axE.set_ylabel('Bicoherence')
     annotate_phases(axE, phases, *axE.get_ylim())
 
     # Panel F: PAC MVL
@@ -1473,7 +1543,6 @@ def plot_ignition_window_report(
     axF.plot(t, y_to_plot)
     axF.set_ylabel('MVL')
     axF.set_title('θ→γ PAC')
-    axF.set_xlabel('s')
     annotate_phases(axF, phases, *axF.get_ylim())
     
     lo,hi = np.nanpercentile(pac, (1,99)); pad = 0.05*(hi-lo+1e-12)
@@ -1513,7 +1582,10 @@ def plot_ignition_window_report(
     # # or (no constrained_layout):
     # gs.update(wspace=0.18, hspace=0.55)
 
-        
+    # Remove x-axis margins - make data fill entire chart width
+    for ax in [axA, axB, axC, axD, axE, axF]:
+        ax.set_xlim(t[0], t[-1])
+
     return fig, phases, traces
 
 def _infer_fs(df: pd.DataFrame, time_col: str = 'Timestamp') -> float:
@@ -1844,19 +1916,36 @@ def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[floa
     margin = max(2.0, 0.5*cfg.win_sec)                # enough context for sliding windows
     t_all = _records[time_col].to_numpy(float)
     mask = np.zeros_like(t_all, bool)
-    for a, b in np.atleast_2d(windows):
+
+    # Ensure windows is iterable as list of (start, end) tuples
+    if isinstance(windows, tuple) and len(windows) == 2 and isinstance(windows[0], (int, float)):
+        # Single window passed as tuple (start, end)
+        windows = [windows]
+
+    for window in windows:
+        a, b = window
         mask |= (t_all >= a - margin) & (t_all <= b + margin)
 
     t = t_all[mask]                                   # segment time base
     X = _get_matrix(_records, channels)[:, mask]
 
+    # Handle bw_hz as either scalar or array
+    # If array, extract bandwidths for the first 3 sr_centers from the ladder
+    if np.ndim(cfg.bw_hz) == 0:  # scalar
+        bw1 = bw2 = bw3 = float(cfg.bw_hz)
+    else:  # array - use first 3 elements for the 3 SR centers
+        bw_array = np.asarray(cfg.bw_hz)
+        if len(bw_array) < 3:
+            raise ValueError(f'bw_hz array must have at least 3 elements for sr_centers, got {len(bw_array)}')
+        bw1, bw2, bw3 = bw_array[0], bw_array[1], bw_array[2]
+
     # Fundamental & harmonics envelopes (median across channels)
-    z1, ph1 = _narrowband_envelope_z(X, fs, cfg.sr_centers[0], cfg.bw_hz)
-    z2, ph2 = _narrowband_envelope_z(X, fs, cfg.sr_centers[1], cfg.bw_hz)
-    z3, ph3 = _narrowband_envelope_z(X, fs, cfg.sr_centers[2], cfg.bw_hz)
+    z1, ph1 = _narrowband_envelope_z(X, fs, cfg.sr_centers[0], bw1)
+    z2, ph2 = _narrowband_envelope_z(X, fs, cfg.sr_centers[1], bw2)
+    z3, ph3 = _narrowband_envelope_z(X, fs, cfg.sr_centers[2], bw3)
 
     # PLV@7.8 over time (sliding)
-    t_plv, plv = _plv_timecourse(X, fs, cfg.sr_centers[0], cfg.bw_hz, cfg.win_sec, cfg.step_sec)
+    t_plv, plv = _plv_timecourse(X, fs, cfg.sr_centers[0], bw1, cfg.win_sec, cfg.step_sec)
 
     # HSI over time
     t_hsi, hsi = _hsi_timecourse(X, fs, cfg.win_sec, cfg.step_sec, cfg.ladder, ladder_bw=cfg.ladder_bw)
@@ -1866,7 +1955,7 @@ def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[floa
         X, fs,
         triads=[(cfg.sr_centers[0], cfg.sr_centers[0], cfg.sr_centers[1]),
                 (cfg.sr_centers[0], cfg.sr_centers[1], cfg.sr_centers[2])],
-        bw=cfg.bw_hz, win_sec=cfg.win_sec, step_sec=cfg.step_sec,
+        bw=bw1, win_sec=cfg.win_sec, step_sec=cfg.step_sec,
     )
 
     t_pac, mvl = _pac_mvl_timecourse(X, fs, theta_band=(7.0,8.0), gamma_band=(40.0,100),
@@ -1880,7 +1969,7 @@ def build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[floa
     def to_abs(ts, ys): return np.interp(t, t_seg0 + ts, ys, left=ys[0], right=ys[-1])
 
     # In build_ignition_feature_pack
-    plv_series = _plv_7p8(X, fs, f0=cfg.sr_centers[0], bw=cfg.bw_hz, win=cfg.win_sec, step=cfg.step_sec)    
+    plv_series = _plv_7p8(X, fs, f0=cfg.sr_centers[0], bw=bw1, win=cfg.win_sec, step=cfg.step_sec)    
 
     # Interpolate sliding metrics back to raw time base for simplicity
     def interp_to_raw(t_src, y_src):
@@ -2293,15 +2382,175 @@ def _detect_six_phase_evolution(
     dplv = np.gradient(plv_s, t)
     dzf = np.gradient(zf_s, t)
 
-    # Determine t0 (ignition onset)
+    # Determine t0 (ignition onset) using robust multi-method detection
     if t0_net is None:
-        # Find steepest PLV rise
-        idx_t0 = int(np.argmax(dplv))
-        t0 = float(t[idx_t0])
+        # Define constrained search window (exclude edges and decay tail)
+        t_range = t[-1] - t[0]
+        search_start_idx = max(0, int(2.0 / max(dt, 1e-6)))  # Skip first 2s
+        search_end_idx = min(n - 1, int((t_range * 0.7) / max(dt, 1e-6)))  # Search only first 70%
+        search_mask = np.zeros(n, dtype=bool)
+        search_mask[search_start_idx:search_end_idx] = True
+
+        # Method 1: PLV derivative (primary - works for coherence-first ignitions)
+        dplv_search = dplv.copy()
+        dplv_search[~search_mask] = -np.inf
+        idx_t0_plv = int(np.argmax(dplv_search))
+        t0_plv = float(t[idx_t0_plv])
+
+        # Method 2: Amplitude derivative (fallback - works for amplitude-first ignitions)
+        dzf_search = dzf.copy()
+        dzf_search[~search_mask] = -np.inf
+        idx_t0_amp = int(np.argmax(dzf_search))
+        t0_amp = float(t[idx_t0_amp])
+
+        # Method 3: Combined score (PLV + amplitude rise)
+        dplv_max = np.nanmax(np.abs(dplv_search))
+        dzf_max = np.nanmax(np.abs(dzf_search))
+
+        # Avoid division by zero or inf
+        if np.isfinite(dplv_max) and dplv_max > 1e-9 and np.isfinite(dzf_max) and dzf_max > 1e-9:
+            combined_score = (dplv_search / dplv_max + dzf_search / dzf_max)
+            combined_score[~search_mask] = -np.inf  # Ensure masked regions stay masked
+            idx_t0_combined = int(np.argmax(combined_score))
+        else:
+            # Fallback if normalization fails
+            idx_t0_combined = idx_t0_plv
+
+        t0_combined = float(t[idx_t0_combined])
+
+        # Cross-validate candidates
+        def _validate_t0(idx_candidate):
+            """Check if candidate t0 has rising PLV and amplitude, and peak occurs after."""
+            if idx_candidate < 10 or idx_candidate >= n - 10:
+                return 0.0  # Too close to edge
+
+            # Check for rising signals after t0 (next 3s)
+            check_window = slice(idx_candidate, min(n, idx_candidate + int(3.0 / max(dt, 1e-6))))
+            plv_rising = np.mean(dplv[check_window]) > 0
+            amp_rising = np.mean(dzf[check_window]) > 0
+
+            # Check that peak occurs after t0 (within 1-10s)
+            peak_idx = int(np.argmax(zf_s))
+            peak_delay = t[peak_idx] - t[idx_candidate]
+            peak_reasonable = 1.0 <= peak_delay <= 10.0
+
+            # Compute validation score
+            score = 0.0
+            if plv_rising: score += 0.3
+            if amp_rising: score += 0.4
+            if peak_reasonable: score += 0.3
+
+            return score
+
+        scores = {
+            'plv': _validate_t0(idx_t0_plv),
+            'amp': _validate_t0(idx_t0_amp),
+            'combined': _validate_t0(idx_t0_combined)
+        }
+
+        # Store all candidates for debugging
+        t0_detection_debug = {
+            'candidates': {
+                'plv': {'t0': t0_plv, 'score': scores['plv']},
+                'amp': {'t0': t0_amp, 'score': scores['amp']},
+                'combined': {'t0': t0_combined, 'score': scores['combined']}
+            },
+            'search_window': (float(t[search_start_idx]), float(t[search_end_idx]))
+        }
+
+        # Select best candidate
+        best_method = max(scores, key=scores.get)
+        if best_method == 'plv':
+            idx_t0 = idx_t0_plv
+            t0 = t0_plv
+        elif best_method == 'amp':
+            idx_t0 = idx_t0_amp
+            t0 = t0_amp
+        else:
+            idx_t0 = idx_t0_combined
+            t0 = t0_combined
+
+        # Last resort: if all scores are very low, estimate from peak
+        if scores[best_method] < 0.3:
+            peak_idx = int(np.argmax(zf_s))
+            # Estimate t0 as 3s before peak (typical ignition duration)
+            idx_t0 = max(0, peak_idx - int(3.0 / max(dt, 1e-6)))
+            t0 = float(t[idx_t0])
+            best_method = 'peak_backtrack'
+            t0_detection_debug['peak_backtrack_used'] = True
+            t0_detection_debug['peak_location'] = float(t[peak_idx])
+
+        # Print diagnostic info (unconditional - helps debug phase detection issues)
+        abs_t0 = window_start + t0 if window_start is not None else t0
+        peak_idx = int(np.argmax(zf_s))
+        peak_t = window_start + t[peak_idx] if window_start is not None else t[peak_idx]
+        # print(f"\n=== t0 Detection Debug ===")
+        # print(f"Method: {best_method}")
+        # print(f"Detected t0: {abs_t0:.2f}s (relative: {t0:.2f}s)")
+        # print(f"Peak location: {peak_t:.2f}s")
+        # print(f"Candidate scores: PLV={scores['plv']:.3f}, AMP={scores['amp']:.3f}, COMB={scores['combined']:.3f}")
+        # print(f"Candidates: PLV@{t0_plv:.1f}s, AMP@{t0_amp:.1f}s, COMB@{t0_combined:.1f}s")
+        # print(f"Search window: {t[search_start_idx]:.1f}s - {t[search_end_idx]:.1f}s")
+        # print("="*26 + "\n")
+
     else:
-        t0 = float(t0_net)
-        # Find nearest index
-        idx_t0 = int(np.argmin(np.abs(t - t0)))
+        # Validate provided t0_net
+        t0_provided = float(t0_net)
+        idx_t0_provided = int(np.argmin(np.abs(t - t0_provided)))
+
+        # Check if provided t0 is reasonable
+        peak_idx = int(np.argmax(zf_s))
+        peak_t = float(t[peak_idx])
+
+        # t0 should be before the peak (within reasonable range: 1-10s before)
+        time_to_peak = peak_t - t0_provided
+        t0_is_valid = (1.0 <= time_to_peak <= 10.0)
+
+        if t0_is_valid:
+            # Use provided t0
+            t0 = t0_provided
+            idx_t0 = idx_t0_provided
+            best_method = 'provided'
+            t0_detection_debug = {'method': 'provided', 't0_net': t0_net, 'validated': True}
+
+            abs_t0 = window_start + t0 if window_start is not None else t0
+            abs_peak_t = window_start + peak_t if window_start is not None else peak_t
+            # print(f"\n=== t0 Detection Debug ===")
+            # print(f"Method: provided (t0_net) ✓ VALID")
+            # print(f"Provided t0: {abs_t0:.2f}s (relative: {t0:.2f}s)")
+            # print(f"Peak location: {abs_peak_t:.2f}s")
+            # print(f"t0 is {time_to_peak:.2f}s before peak")
+            # print("="*26 + "\n")
+        else:
+            # Reject invalid t0_net and fall back to auto-detection
+            abs_t0_provided = window_start + t0_provided if window_start is not None else t0_provided
+            abs_peak_t = window_start + peak_t if window_start is not None else peak_t
+            # print(f"\n=== t0 Detection Debug ===")
+            # print(f"⚠️  INVALID t0_net REJECTED: {abs_t0_provided:.2f}s")
+            # print(f"   Reason: t0 is {time_to_peak:.2f}s from peak (expected 1-10s before)")
+            # print(f"   Peak location: {abs_peak_t:.2f}s")
+            # print(f"   Falling back to auto-detection...")
+
+            # Fall back to auto-detection (copy the auto-detection logic)
+            # Define constrained search window
+            t_range = t[-1] - t[0]
+            search_start_idx = max(0, int(2.0 / max(dt, 1e-6)))
+            search_end_idx = min(n - 1, int((t_range * 0.7) / max(dt, 1e-6)))
+
+            # Use peak backtrack as the most reliable fallback
+            idx_t0 = max(0, peak_idx - int(3.0 / max(dt, 1e-6)))
+            t0 = float(t[idx_t0])
+            best_method = 'peak_backtrack_fallback'
+            t0_detection_debug = {
+                'method': 'peak_backtrack_fallback',
+                'rejected_t0_net': t0_net,
+                'reason': f't0 was {time_to_peak:.2f}s from peak',
+                'peak_location': peak_t
+            }
+
+            abs_t0 = window_start + t0 if window_start is not None else t0
+            # print(f"   Using: peak_backtrack → t0={abs_t0:.2f}s (peak - 3s)")
+            # print("="*26 + "\n")
 
     def _find_phase_boundary(start_idx: int, direction: int, criterion_fn, min_duration_sec: float = 0.5) -> Optional[int]:
         """Find phase boundary by searching in direction until criterion met."""
@@ -2348,14 +2597,32 @@ def _detect_six_phase_evolution(
 
     # === PHASE 3: Amplitude Surge ===
     # Explosive growth from z=3 to peak
-    p3_end_idx = int(np.argmax(zf_s))  # Peak amplitude
+    # Find center of peak region (constrained to AFTER Phase 2)
+    # Search only in the region after Phase 2 ends to maintain temporal ordering
+    search_after_idx = max(p2_end_idx, 0)
+    zf_after_p2 = zf_s[search_after_idx:]
+
+    if zf_after_p2.size > 0:
+        peak_z_after = float(np.nanmax(zf_after_p2))
+        peak_region_rel = np.where(zf_after_p2 >= peak_z_after * 0.95)[0]  # Indices within 5% of peak
+        if peak_region_rel.size > 0:
+            p3_end_idx_rel = int(peak_region_rel[len(peak_region_rel) // 2])  # Center of peak region
+            p3_end_idx = search_after_idx + p3_end_idx_rel
+        else:
+            p3_end_idx = search_after_idx + int(np.argmax(zf_after_p2))
+    else:
+        # No data after Phase 2 - set to end of Phase 2
+        p3_end_idx = p2_end_idx
+
+    # Use the peak found in the constrained region for Phase 4 threshold calculation
+    peak_z = float(zf_s[p3_end_idx])
 
     p3_start = p2_end
     p3_end = float(t[p3_end_idx])
 
     # === PHASE 4: Peak/Plateau ===
     # Sustained high amplitude and synchronization
-    peak_z = float(np.nanmax(zf_s))
+    # (peak_z already calculated above)
     plateau_thresh = peak_z * 0.85  # Within 15% of peak
 
     p4_end_idx = _find_phase_boundary(
@@ -2388,6 +2655,45 @@ def _detect_six_phase_evolution(
     # Exponential decay back to baseline
     p6_start = p5_end
     p6_end = float(t[-1])
+
+    # === TEMPORAL ORDERING VALIDATION ===
+    # Ensure all phases are temporally ordered and have minimum duration
+    # If violations are detected, clamp boundaries to maintain sequence
+    min_duration = 0.1  # seconds
+
+    # Validate and fix Phase 1
+    if p1_end - p1_start < min_duration:
+        p1_end = min(p1_start + min_duration, t[-1])
+
+    # Validate and fix Phase 2
+    if p2_start < p1_end:
+        p2_start = p1_end
+    if p2_end - p2_start < min_duration:
+        p2_end = min(p2_start + min_duration, t[-1])
+
+    # Validate and fix Phase 3
+    if p3_start < p2_end:
+        p3_start = p2_end
+    if p3_end - p3_start < min_duration:
+        p3_end = min(p3_start + min_duration, t[-1])
+
+    # Validate and fix Phase 4
+    if p4_start < p3_end:
+        p4_start = p3_end
+    if p4_end - p4_start < min_duration:
+        p4_end = min(p4_start + min_duration, t[-1])
+
+    # Validate and fix Phase 5
+    if p5_start < p4_end:
+        p5_start = p4_end
+    if p5_end - p5_start < min_duration:
+        p5_end = min(p5_start + min_duration, t[-1])
+
+    # Validate and fix Phase 6
+    if p6_start < p5_end:
+        p6_start = p5_end
+    if p6_end - p6_start < min_duration:
+        p6_end = p6_start + min_duration  # Phase 6 goes to end, so just ensure minimum
 
     # Compute confidence scores
     def _sigmoid(x: float) -> float:
@@ -2446,7 +2752,7 @@ def _detect_six_phase_evolution(
             'time_start': p2_start,
             'time_end': p2_end,
             'label': 'Phase2',
-            'color': '#00BCD4',
+            'color': '#4CAF50',  # Green
             'confidence': _phase_confidence(_time_to_idx(p2_start), _time_to_idx(p2_end),
                                            {'plv_rising': True, 'z_range': (1.5, 3.5)})
         },
@@ -2455,16 +2761,16 @@ def _detect_six_phase_evolution(
             'time_start': p3_start,
             'time_end': p3_end,
             'label': 'Phase3',
-            'color': '#FF6F00',
+            'color': '#FF6F00',  # Orange
             'confidence': _phase_confidence(_time_to_idx(p3_start), _time_to_idx(p3_end),
                                            {'z_rising': True, 'z_range': (3.0, 15.0)})
         },
         'Phase4': {
-            'name': 'Peak',
+            'name': 'Plateau',
             'time_start': p4_start,
             'time_end': p4_end,
             'label': 'Phase4',
-            'color': '#FFC107',
+            'color': '#F44336',  # Red
             'confidence': _phase_confidence(_time_to_idx(p4_start), _time_to_idx(p4_end),
                                            {'plv_range': (0.75, 1.0), 'z_range': (5.0, 15.0)})
         },
@@ -2473,7 +2779,7 @@ def _detect_six_phase_evolution(
             'time_start': p5_start,
             'time_end': p5_end,
             'label': 'Phase5',
-            'color': '#F44336',
+            'color': '#9C27B0',  # Purple
             'confidence': 0.6  # Harder to detect in averaged signals
         },
         'Phase6': {
@@ -2481,7 +2787,7 @@ def _detect_six_phase_evolution(
             'time_start': p6_start,
             'time_end': p6_end,
             'label': 'Phase6',
-            'color': '#673AB7',
+            'color': '#9E9E9E',  # Gray (same as Baseline)
             'confidence': _phase_confidence(_time_to_idx(p6_start), _time_to_idx(p6_end),
                                            {'z_range': (0, 5.0)})
         }
@@ -2490,6 +2796,8 @@ def _detect_six_phase_evolution(
     summary = {
         'phase_model': 'six-phase-evolution',
         't0': t0,
+        't0_detection_method': best_method,  # Track which method was used for t0 detection
+        't0_detection_debug': t0_detection_debug,  # Full debug info about t0 detection
         'phases': phases
     }
 
@@ -2503,7 +2811,7 @@ def _detect_six_phase_evolution(
 
 
 def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float,
-                    *, highlight_padding: float = 0.25, show_labels: bool = True) -> None:
+                    *, highlight_padding: float = 0.25, show_labels: bool = True, show_shading: bool = True) -> None:
     """
     Annotate phases on plot. Supports both old 5-phase (P0-P4) and new 6-phase models.
 
@@ -2513,17 +2821,18 @@ def annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float,
         ymin, ymax: Y-axis limits for annotation positioning
         highlight_padding: Padding for legacy phase highlighting
         show_labels: If False, only draw lines and shading (no text labels)
+        show_shading: If False, only draw lines (no shading)
     """
     # Detect phase model type
     phase_model = phases.get('phase_model', 'five-phase')
 
     if phase_model == 'six-phase-evolution':
-        _annotate_six_phases(ax, phases, ymin, ymax, show_labels=show_labels)
+        _annotate_six_phases(ax, phases, ymin, ymax, show_labels=show_labels, show_shading=show_shading)
     else:
-        _annotate_five_phases_legacy(ax, phases, ymin, ymax, highlight_padding=highlight_padding, show_labels=show_labels)
+        _annotate_five_phases_legacy(ax, phases, ymin, ymax, highlight_padding=highlight_padding, show_labels=show_labels, show_shading=show_shading)
 
 
-def _annotate_six_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float, show_labels: bool = True) -> None:
+def _annotate_six_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float, show_labels: bool = True, show_shading: bool = True) -> None:
     """Annotate six-phase temporal evolution model."""
     phase_data = phases.get('phases', {})
 
@@ -2546,10 +2855,8 @@ def _annotate_six_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float, s
             # Degenerate detection - don't annotate
             return
 
-    for phase_key in ['Phase1', 'Phase2', 'Phase3', 'Phase4', 'Phase5', 'Phase6']:
-        phase = phase_data.get(phase_key)
-        if not phase:
-            continue
+    # Only draw phases that passed validation (duration >= 0.1s)
+    for phase_key, phase in valid_phases:
 
         t_start = phase.get('time_start')
         t_end = phase.get('time_end')
@@ -2561,48 +2868,56 @@ def _annotate_six_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float, s
         color = phase.get('color', '#888888')
         confidence = float(phase.get('confidence', 0.5))
 
-        # Draw phase span as shaded region
-        ax.axvspan(t_start, t_end, color=color, alpha=0.12, lw=0)
+        # Draw phase span as shaded region (only if show_shading is True)
+        if show_shading:
+            ax.axvspan(t_start, t_end, color=color, alpha=0.12, lw=0)
 
         # Draw boundaries
         alpha_boundary = 0.5 + 0.4 * min(1.0, confidence)
         ax.axvline(t_start, color=color, linestyle='--', linewidth=1.5,
                   alpha=alpha_boundary, zorder=10)
 
-        # Label positioning: Surge at top, others at bottom (only if show_labels is True)
+        # Label positioning: "Ignition" outside at bottom, all others inside at bottom (only if show_labels is True)
         if show_labels:
             t_center = (t_start + t_end) / 2.0
 
             # Create background box for better readability
-            bbox_props = dict(boxstyle='round,pad=0.3', facecolor='white',
-                             edgecolor=color, alpha=0.85, linewidth=1.2)
+            bbox_props = dict(boxstyle='round,pad=0.2', facecolor='white',
+                             edgecolor=color, alpha=0.9, linewidth=1.0)
 
-            if name in ('Surge', 'Amplitude Surge', 'Amplitude', 'Ignition'):
-                # Place Surge at top, inside the chart
-                ax.text(t_center, ymax - 0.05 * (ymax - ymin), name,
-                       ha='center', va='top', fontsize=9, color=color,
-                       fontweight='normal', alpha=1.0, bbox=bbox_props)
+            if name == 'Ignition':
+                # Place Ignition label below the chart (outside)
+                ax.text(t_center, ymin - 0.02 * (ymax - ymin), name,
+                       ha='center', va='top', fontsize=7, color=color,
+                       fontweight='normal', alpha=1.0, bbox=bbox_props, zorder=1000)
             else:
-                # All other phases at bottom, just above x-axis
+                # Place all other phase labels inside at bottom
                 ax.text(t_center, ymin + 0.02 * (ymax - ymin), name,
-                       ha='center', va='bottom', fontsize=9, color=color,
-                       fontweight='normal', alpha=1.0, bbox=bbox_props)
+                       ha='center', va='bottom', fontsize=7, color=color,
+                       fontweight='normal', alpha=1.0, bbox=bbox_props, zorder=1000)
 
-            # Show confidence if low (moved to top to avoid overlap)
-            if confidence < 0.5:
-                ax.text(t_center, ymax - 0.02 * (ymax - ymin), f"({confidence:.2f})",
-                       ha='center', va='top', fontsize=6, color=color, alpha=0.6)
+            # # Show confidence if low (place opposite to main label to avoid overlap)
+            # if confidence < 0.5:
+            #     if name in ('Surge', 'Amplitude Surge', 'Amplitude', 'Ignition'):
+            #         # Surge label at bottom, so confidence at top
+            #         ax.text(t_center, ymax - 0.02 * (ymax - ymin), f"({confidence:.2f})",
+            #                ha='center', va='top', fontsize=6, color=color, alpha=0.6)
+            #     else:
+            #         # Other labels at top, so confidence at bottom
+            #         ax.text(t_center, ymin + 0.05 * (ymax - ymin), f"({confidence:.2f})",
+            #                ha='center', va='bottom', fontsize=6, color=color, alpha=0.6)
 
-    # Highlight ignition core (Phase2-Phase5) - background shading only, no label
-    p2 = phase_data.get('Phase2', {})
-    p5 = phase_data.get('Phase5', {})
-    if p2.get('time_start') and p5.get('time_end'):
-        ax.axvspan(p2['time_start'], p5['time_end'], color='#FFF59D',
-                  alpha=0.15, lw=0, zorder=0)
+    # Highlight ignition core (Phase2-Phase5) - background shading only, no label (only if show_shading is True)
+    if show_shading:
+        p2 = phase_data.get('Phase2', {})
+        p5 = phase_data.get('Phase5', {})
+        if p2.get('time_start') and p5.get('time_end'):
+            ax.axvspan(p2['time_start'], p5['time_end'], color='#FFF59D',
+                      alpha=0.15, lw=0, zorder=0)
 
 
 def _annotate_five_phases_legacy(ax, phases: Dict[str, Any], ymin: float, ymax: float,
-                                 *, highlight_padding: float = 0.25, show_labels: bool = True) -> None:
+                                 *, highlight_padding: float = 0.25, show_labels: bool = True, show_shading: bool = True) -> None:
     """Legacy five-phase annotation (P0-P4)."""
     colors = {
         'P0': '#00BCD4',
@@ -2624,10 +2939,12 @@ def _annotate_five_phases_legacy(ax, phases: Dict[str, Any], ymin: float, ymax: 
         pad = highlight_padding + (1.0 - float(mean_conf)) * 0.4
         start = float(p0['time']) - pad
         end = float(endpoint['time']) + pad
-        ax.axvspan(start, end, color='#FFF59D33', lw=0)
+        if show_shading:
+            ax.axvspan(start, end, color='#FFF59D33', lw=0)
         if show_labels:
-            ax.text((start + end) * 0.5, ymax + 0.02 * (ymax - ymin), 'Ignition',
-                    ha='center', va='bottom', fontsize=8, color='#424242')
+            # Place Ignition label below the chart (outside)
+            ax.text((start + end) * 0.5, ymin - 0.08 * (ymax - ymin), 'Ignition',
+                    ha='center', va='top', fontsize=8, color='#424242', zorder=1000)
 
     for name in ['P0', 'P1', 'P2', 'P3', 'P4']:
         ev = _get_event(name)
@@ -2639,14 +2956,16 @@ def _annotate_five_phases_legacy(ax, phases: Dict[str, Any], ymin: float, ymax: 
             conf = 0.0
         color = colors.get(name, 'cyan')
         half_width = 0.4 + (1.0 - conf) * 0.6
-        ax.axvspan(time - half_width, time + half_width, color=color, alpha=0.08, lw=0)
+        if show_shading:
+            ax.axvspan(time - half_width, time + half_width, color=color, alpha=0.08, lw=0)
         ax.vlines(time, ymin, ymax, linestyles='--', linewidth=1.3, color=color,
                   alpha=0.7 + 0.3 * min(1.0, conf))
         if show_labels:
-            ax.text(time, ymin, name, rotation=90, va='bottom', ha='center', color=color, fontsize=8)
+            # Place phase label inside at bottom (vertical text)
+            ax.text(time, ymin, name, rotation=90, va='bottom', ha='center', color=color, fontsize=8, zorder=1000)
             if conf < 0.45:
                 ax.text(time, ymax, f"{conf:.2f}", rotation=90, va='top', ha='center',
-                        color=color, fontsize=7, alpha=0.6)
+                        color=color, fontsize=7, alpha=0.6, zorder=1000)
 
 
 def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
@@ -2657,23 +2976,24 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
     FS = 128.0
     
     # BUILD PACK
-    pack = build_ignition_feature_pack(records,ign_win,cfg=cfg)
+    pack = build_ignition_feature_pack(records, [ign_win], cfg=cfg)
     pack.setdefault('meta', {})['channels_used'] = list(electrodes)
 
     m = (pack['t'] >= ign_win[0]) & (pack['t'] <= ign_win[1])
     
     # SPECTROGRAM - coarse spectrogram for Panel A + HSI (single source of truth)
-    pack['spec'] = compute_session_spectrogram(
-        records, channels=electrodes, time_col='Timestamp', fs=FS,
-        band=(2,45), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
-    )
+    # pack['spec'] = compute_session_spectrogram(
+    #     records, channels=electrodes, time_col='Timestamp', fs=FS,
+    #     band=(2,25), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+    # )
 
     # PIANO ROLL
     tWc, fWc, SWc = window_spec_median(
         records, ign_win, channels=electrodes, fs=FS, time_col='Timestamp',
-        band=(2,45), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
+        band=(2,40), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
     )
-    tWc = tWc + cfg.spec_win/2.0  # center STFT times
+    # tWc = tWc + cfg.spec_win/2.0  # center STFT times
+    # spec_z = _spec_db_rowz(SWc)
     pack.setdefault('spec_by_window', {})[(float(ign_win[0]), float(ign_win[1]))] = (tWc, fWc, SWc)
 
     
@@ -2708,9 +3028,16 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
 
     X = _get_matrix(records, electrodes)
 
+    # Handle bw_hz as either scalar or array
+    if np.ndim(cfg.bw_hz) == 0:  # scalar
+        bw_f1 = float(cfg.bw_hz)
+    else:  # array - use first element for fundamental frequency
+        bw_array = np.asarray(cfg.bw_hz)
+        bw_f1 = bw_array[0]
+
     # PLV
     t_plv, plv = _plv_timecourse(
-        X, fs=FS, f0=ladder[0], bw=cfg.bw_hz,
+        X, fs=FS, f0=ladder[0], bw=bw_f1,
         win_sec=cfg.win_sec, step_sec=cfg.step_sec)
     pack['plv_7p83'] = np.interp(pack['t'], t0 + t_plv, plv, left=plv[0], right=plv[-1])
 
@@ -2732,13 +3059,17 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
     ev = ign_out['events']
     m_overlap = (ev['t_start'] < ign_win[1]) & (ev['t_end'] > ign_win[0])
 
-    # Extract t0_net from matching event
+    # Extract t0_net from matching event (with fallback to sr_z_peak_t)
     t0_net = None
     if m_overlap.any():
         event_row = ev.loc[m_overlap].iloc[0]
         seed_from_event = float(np.clip(event_row['sr_z_peak_t'], ign_win[0]+2.0, ign_win[1]-2.0))
         if 't0_net' in event_row and pd.notna(event_row['t0_net']):
             t0_net = float(event_row['t0_net'])
+        elif 'sr_z_peak_t' in event_row and pd.notna(event_row['sr_z_peak_t']):
+            # Fallback: estimate t0 as ~3s before amplitude peak
+            sr_peak_t = float(event_row['sr_z_peak_t'])
+            t0_net = max(ign_win[0], sr_peak_t - 3.0)
     else:
         seed_from_event = 0.5 * (ign_win[0] + ign_win[1])
 
@@ -2778,9 +3109,54 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
     t_abs_all = np.asarray(records[TIME_COL], float)
     mask_seg = (t_abs_all >= ign_win[0]) & (t_abs_all <= ign_win[1])
     X_seg = _get_matrix(records, electrodes)[:, mask_seg]
-    t_R_rel, R_raw = _kuramoto_order_series(X_seg, FS, ladder[0], cfg.bw_hz)
+    t_R_rel, R_raw = _kuramoto_order_series(X_seg, FS, ladder[0], bw_f1)
     R_series = smooth_sec(t_R_rel, R_raw, 0.3)
     t_R = t_R_rel + ign_win[0]
+
+    # TRIADIC BICOHERENCE - compute for all available harmonics
+    # Build triads dynamically based on ladder
+    f1 = ladder[0] if len(ladder) >= 1 else 7.83
+    f2 = ladder[1] if len(ladder) >= 2 else 14.66
+    f3 = ladder[2] if len(ladder) >= 3 else 20.80
+    f4 = ladder[3] if len(ladder) >= 4 else 27.14
+    f5 = ladder[4] if len(ladder) >= 5 else 33.48
+    f6 = ladder[5] if len(ladder) >= 6 else 39.82
+
+    triads = []
+    if len(ladder) >= 3:
+        triads.append((f1, f1, f2))
+        triads.append((f1, f1, f3))
+        triads.append((f1, f2, f3))
+        triads.append((f1, f2, f4))
+        triads.append((f1, f3, f4))
+        triads.append((f1, f1, f6))
+        triads.append((f1, f2, f6))
+        triads.append((f1, f3, f6))
+        triads.append((f1, f4, f6))
+        
+        
+        
+        # triads.append((f2, f2, f6))
+        # triads.append((f2, f3, f6))
+        # triads.append((f2, f2, f4))
+        
+        # triads.append((f2, f3, f5))
+        # triads.append((f3, f3, f6))
+
+    # Compute triadic bicoherence timeseries
+    t_bic_rel = None
+    bic_triads = {}
+    if len(triads) > 0:
+        t_bic_rel, bic_raw = _bicoherence_triads_timecourse(
+            X_seg, FS, triads, bw_f1, win_sec=0.8, step_sec=0.1
+        )
+        # Format labels for readability
+        raw_keys = list(bic_raw.keys())
+        triad_keys = _format_numeric_labels(raw_keys, decimals=2)
+        bic_triads = {label: bic_raw[key] for label, key in zip(triad_keys, raw_keys)}
+
+    # Compute absolute time for bicoherence
+    t_bic = (ign_win[0] + t_bic_rel) if t_bic_rel is not None else None
 
     # Get provider slice for phase detection
     provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
@@ -2827,9 +3203,11 @@ def six_panel(records,electrodes,ign_win,ign_out,ladder,cfg,session_name):
         p1_band=(-1.0, +1.4),
         pad_s=2.0,
         title=f"Ignition {ign_win[0]}–{ign_win[1]}s",
-        centers=ladder[:3],
+        centers=ladder,  # All harmonics
         session_name=session_name,
-        phases=phases  # Pass the six-phase detector output
+        phases=phases,  # Pass the six-phase detector output
+        bic_triads=bic_triads,  # Pass triadic bicoherence data
+        t_bic=t_bic  # Pass bicoherence time axis
     )
 
     return fig, phases, traces
@@ -2882,7 +3260,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     X_full = _get_matrix(records, electrodes)
     t_all = np.asarray(records[TIME_COL], float)
 
-    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    pack = build_ignition_feature_pack(records, [ign_win], cfg=cfg)
     pack.setdefault('spec', compute_session_spectrogram(
         records, channels=electrodes, time_col=TIME_COL, fs=FS,
         band=(2, 60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
@@ -2902,7 +3280,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
 
     dt = float(np.median(np.diff(t))) if t.size > 1 else 1/FS
 
-    centers = ladder[:4] if len(ladder) >= 4 else ladder
+    centers = ladder  # Use all harmonics provided in ladder
     bw_arr = np.atleast_1d(cfg.bw_hz if cfg.bw_hz is not None else 0.5)
     bw0 = float(bw_arr[0])
 
@@ -2923,6 +3301,14 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     X = X_full[:, mask_seg]
     X_base = X_full[:, mask_base]
     t_seg = t_all[mask_seg]
+
+    # Compute ignition envelopes for all harmonics (beyond the first 3 from provider)
+    z_ign_all = [zf, z2, z3]
+    for i in range(3, len(centers)):
+        # Extract from raw data for harmonics beyond 3rd
+        z_h, _ = _narrowband_envelope_z(X, FS, centers[i], bw0)
+        z_ign_all.append(z_h)
+
     t_R, R_raw = _kuramoto_order_series(X, FS, centers[0], bw0)
     R_series = smooth_sec(t_R, R_raw, 0.3)
     t_R = t_R + ign_win[0]
@@ -2956,13 +3342,20 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
         seed_idx = None
     np.fill_diagonal(te_diff, 0.0)
 
-    # Extract t0_net from ign_out for phase detection anchoring
+    # Extract t0_net from ign_out for phase detection anchoring (with fallback to sr_z_peak_t)
     row = _match_ignition_event_row(ign_out, ign_win)
     t0_net = None
-    if row is not None and 't0_net' in row:
-        t0_val = row['t0_net']
-        if pd.notna(t0_val) and np.isfinite(float(t0_val)):
-            t0_net = float(t0_val)
+    if row is not None:
+        if 't0_net' in row:
+            t0_val = row['t0_net']
+            if pd.notna(t0_val) and np.isfinite(float(t0_val)):
+                t0_net = float(t0_val)
+        if t0_net is None and 'sr_z_peak_t' in row:
+            # Fallback: estimate t0 as ~3s before amplitude peak
+            sr_peak_val = row['sr_z_peak_t']
+            if pd.notna(sr_peak_val) and np.isfinite(float(sr_peak_val)):
+                sr_peak_t = float(sr_peak_val)
+                t0_net = max(ign_win[0], sr_peak_t - 3.0)
 
     mode_power_base = mode_power_ign = None
     entropy_base = entropy_ign = pr_base = pr_ign = np.nan
@@ -3008,14 +3401,18 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
         tWb = tWb + cfg.spec_win/2.0
         _, slopes_base = _spectral_slope_series(tWb, fWb, SWb)
 
-        z_base, _ = _narrowband_envelope_z(X_base, FS, centers[0], bw0)
-        z2_base = z3_base = z4_base = None
-        if len(centers) > 1:
-            z2_base, _ = _narrowband_envelope_z(X_base, FS, centers[1], bw0)
-        if len(centers) > 2:
-            z3_base, _ = _narrowband_envelope_z(X_base, FS, centers[2], bw0)
-        if len(centers) > 3:
-            z4_base, _ = _narrowband_envelope_z(X_base, FS, centers[3], bw0)
+        # Compute baseline envelopes for all harmonics in ladder
+        z_base_all = []
+        for freq in centers:
+            z_h, _ = _narrowband_envelope_z(X_base, FS, freq, bw0)
+            z_base_all.append(z_h)
+
+        # Keep old variable names for backward compatibility
+        z_base = z_base_all[0]
+        z2_base = z_base_all[1] if len(z_base_all) > 1 else None
+        z3_base = z_base_all[2] if len(z_base_all) > 2 else None
+        z4_base = z_base_all[3] if len(z_base_all) > 3 else None
+
         z_base_z = smooth_sec(t_base, robust_z(np.asarray(z_base, float)), 0.15)
         sizes_base, durations_base = _avalanche_size_duration(z_base_z, t_base, thresh_z, bridge_sec=0.30)
 
@@ -3035,6 +3432,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     else:
         z_base_z = np.array([])
         z_base = np.array([])
+        z_base_all = []  # Initialize empty list for all baseline harmonics
         z2_base = z3_base = z4_base = None
         t_plv_base = np.array([])
         plv_base_series = np.array([])
@@ -3048,7 +3446,7 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     var_ign = np.clip(_interp_safe(t_R, t, env_ign), 1e-9, None)
 
     plv_series = np.interp(t_seg, pack['t'], pack['plv_7p83']) if pack.get('plv_7p83') is not None else plv
-    harmonics_for_msc = centers[:3] if len(centers) >= 3 else centers
+    harmonics_for_msc = centers  # Use all harmonics
     msc_matrix, msc_null = _msc_matrix(X, FS, harmonics_for_msc, bw0, n_surrogates=32)
     z2 = np.asarray(z2, float)
     z3 = np.asarray(z3, float)
@@ -3075,28 +3473,28 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
                       transform=ax_modes.transAxes, fontsize=8,
                       bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
     else:
-        fallback_labels = [f'{f:.2f} Hz' for f in ladder[:min(3, len(ladder))]]
+        # Use all harmonics from ladder
+        fallback_labels = [f'{f:.2f} Hz' for f in centers]
         ign_vals = []
         base_vals = []
-        for idx_mode in range(len(fallback_labels)):
-            if idx_mode == 0:
-                ign_vals.append(float(np.nanmean(np.abs(provider.z_fund()))))
-                base_vals.append(float(np.nanmean(np.abs(z_base))))
-            elif idx_mode == 1 and z2_base is not None:
-                ign_vals.append(float(np.nanmean(np.abs(provider.z_h2()))))
-                base_vals.append(float(np.nanmean(np.abs(z2_base))))
-            elif idx_mode == 2 and z3_base is not None:
-                ign_vals.append(float(np.nanmean(np.abs(provider.z_h3()))))
-                base_vals.append(float(np.nanmean(np.abs(z3_base))))
+        for idx_mode in range(len(centers)):
+            # Use the computed envelopes for all harmonics
+            if idx_mode < len(z_ign_all):
+                ign_vals.append(float(np.nanmean(np.abs(z_ign_all[idx_mode]))))
             else:
                 ign_vals.append(np.nan)
+
+            if idx_mode < len(z_base_all):
+                base_vals.append(float(np.nanmean(np.abs(z_base_all[idx_mode]))))
+            else:
                 base_vals.append(np.nan)
+
         idx = np.arange(len(fallback_labels))
         width = 0.35
         ax_modes.bar(idx - width/2, base_vals, width, alpha=0.6, label='Baseline')
         ax_modes.bar(idx + width/2, ign_vals, width, alpha=0.8, label='Ignition')
         ax_modes.set_xticks(idx)
-        ax_modes.set_xticklabels(fallback_labels)
+        ax_modes.set_xticklabels(fallback_labels, fontsize=7 if len(fallback_labels) > 3 else 8)
         ax_modes.set_ylabel('Envelope magnitude')
         ax_modes.set_title('Harmonic Envelopes')
         ax_modes.legend(fontsize=8)
@@ -3183,6 +3581,10 @@ def six_panel_2(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     ax6.set_title(f'EEG–SR Coherence @ Harmonics')
     ax6.legend(loc='upper right', ncol=min(n_ch, 4), fontsize=8, frameon=False)
 
+    # Remove x-axis margins - make data fill entire chart width
+    ax3.set_xlim(ign_win[0], ign_win[1])
+    ax5.set_xlim(ign_win[0], ign_win[1])
+
     fig.suptitle(f'Ignition {ign_win[0]}–{ign_win[1]}s\n{session_name}', fontsize=14)
     return fig
 
@@ -3195,10 +3597,17 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
         raise ValueError('Not enough samples to build SR signature panel')
     X = _get_matrix(records, electrodes)
 
+    # Use all harmonics from ladder
     f1 = ladder[0]
-    f2 = ladder[1] if len(ladder) > 1 else f1 * 2.0
-    f3 = ladder[2] if len(ladder) > 2 else f1 * 3.0
-    bw = cfg.bw_hz if cfg.bw_hz is not None else 0.5
+    bw_cfg = cfg.bw_hz if cfg.bw_hz is not None else 0.5
+
+    # Handle bw_hz as either scalar or array
+    if np.ndim(bw_cfg) == 0:  # scalar
+        bw_array = np.full(len(ladder), float(bw_cfg))
+    else:  # array
+        bw_array = np.asarray(bw_cfg)
+        if len(bw_array) != len(ladder):
+            raise ValueError(f'bw_hz array length ({len(bw_array)}) must match ladder length ({len(ladder)})')
 
     pad = max(4.0, 0.5 * (ign_win[1] - ign_win[0]))
     t0 = max(t_all[0], ign_win[0] - pad)
@@ -3211,49 +3620,66 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     # Spectrogram (5–25 Hz, row-wise z)
     t_spec, f_spec, S_spec = window_spec_median(
         records, (t0, t1), channels=electrodes, fs=FS, time_col=TIME_COL,
-        band=(5, 25), win_sec=2.0, overlap=0.5
+        band=(0.5, 40), win_sec=1.5, overlap=0.95
     )
     spec_z = _spec_db_rowz(S_spec)
 
-    # Harmonic envelopes and PLV
-    env1_full, _ = _narrowband_envelope_z(X, FS, f1, bw)
-
-    def _safe_envelope(center_hz: float) -> np.ndarray:
+    # Compute harmonic envelopes for all harmonics in ladder
+    def _safe_envelope(center_hz: float, bandwidth: float) -> np.ndarray:
         if center_hz >= (0.48 * FS):
-            return np.full_like(env1_full, np.nan, dtype=float)
-        amp, _ = _narrowband_envelope_z(X, FS, center_hz, bw)
+            return np.full(t_all.shape, np.nan, dtype=float)
+        amp, _ = _narrowband_envelope_z(X, FS, center_hz, bandwidth)
         return amp
 
-    env2_full = _safe_envelope(f2)
-    env3_full = _safe_envelope(f3)
     def _to_z(env):
         if not np.isfinite(env).any():
             return np.full_like(env, np.nan, dtype=float)
-        return smooth_sec(t_all, robust_z(env), 0.25)
+        return smooth_sec(t_all, robust_z(env), 0.15)
 
-    env1_z = _to_z(env1_full)
-    env2_z = _to_z(env2_full)
-    env3_z = _to_z(env3_full)
+    # Compute envelopes for all harmonics
+    harmonic_envs_z = []
+    for i, freq in enumerate(ladder):
+        env_full = _safe_envelope(freq, bw_array[i])
+        env_z = _to_z(env_full)
+        harmonic_envs_z.append(env_z)
+
+    # Keep old variable names for backward compatibility
+    env1_z = harmonic_envs_z[0]
+    env2_z = harmonic_envs_z[1] if len(harmonic_envs_z) > 1 else np.full_like(env1_z, np.nan)
+    env3_z = harmonic_envs_z[2] if len(harmonic_envs_z) > 2 else np.full_like(env1_z, np.nan)
+
+    # For legacy code that expects f2, f3, f4, f5, f6 (with fallbacks)
+    f2 = ladder[1] if len(ladder) > 1 else f1 * 2
+    f3 = ladder[2] if len(ladder) > 2 else f1 * 3
+    f4 = ladder[3] if len(ladder) > 3 else f1 * 4
+    f5 = ladder[4] if len(ladder) > 4 else f1 * 5
+    f6 = ladder[5] if len(ladder) > 5 else f1 * 6
 
     mask_event = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
     X_event = X[:, mask_event] if np.any(mask_event) else X[:, mask_seg]
     v_ref_full = None
-    try:
-        sr_mode = getattr(cfg, 'sr_reference', 'auto-SSD')
-        v_sr_event, w_sr = _build_virtual_sr(X_event, FS, f1, bw, mode=sr_mode)
-        if w_sr is not None:
-            v_ref_full = (w_sr @ X).astype(float)
-    except Exception:
-        v_ref_full = None
+    # try:
+    #     sr_mode = getattr(cfg, 'sr_reference', 'auto-SSD')
+    #     v_sr_event, w_sr = _build_virtual_sr(X_event, FS, f1, bw, mode=sr_mode)
+    #     if w_sr is not None:
+    #         v_ref_full = (w_sr @ X).astype(float)
+    # except Exception:
+    #     v_ref_full = None
+    # Simple median-based SR reference (matches envelope computation method)
+    bw_f1 = bw_array[0]  # Bandwidth for fundamental frequency
+    b = firwin(801, [max(0.1, f1-bw_f1), f1+bw_f1], pass_zero=False, fs=FS)
+    Xb = filtfilt(b, [1.0], X, axis=-1, padlen=min(2400, X.shape[-1]-1))
+    v_ref_full = np.nanmedian(Xb, axis=0)  # Median across channels
 
-    t_plv_rel, plv_series = _plv_timecourse(X, FS, f1, bw, win_sec=5.0, step_sec=0.1)
+    t_plv_rel, plv_series = _plv_timecourse(X, FS, f1, bw_f1, win_sec=3.0, step_sec=0.01)
     plv_times = t_all[0] + t_plv_rel
-    t_msc_rel, msc_series = _msc_timecourse(X, FS, f1, bw, win_sec=1.0, step_sec=0.1, v_ref=v_ref_full)
+
+    t_msc_rel, msc_series = _msc_timecourse(X, FS, f1, bw_f1, win_sec=1.0, step_sec=0.1, v_ref=v_ref_full)
     msc_times = t_all[0] + t_msc_rel
     msc_series_s = np.array([])
 
-    # ΔHSI proxy from mean-centered z envelopes
-    valid_envs = [env for env in (env1_z, env2_z, env3_z) if np.isfinite(env).any()]
+    # ΔHSI proxy from mean-centered z envelopes (all harmonics)
+    valid_envs = [env for env in harmonic_envs_z if np.isfinite(env).any()]
     if not valid_envs:
         z_mean = np.full_like(env1_z, np.nan)
     else:
@@ -3265,16 +3691,20 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
 
     # Triadic bicoherence
     triads = []
-    if len(ladder) >= 2:
-        triads.append((f1, f1, f2))
-    else:
-        triads.append((f1, f1, 2 * f1))
+    # if len(ladder) >= 2:
+    #     triads.append((f1, f1, f2))
+    # else:
+    #     triads.append((f1, f1, 2 * f1))
     if len(ladder) >= 3:
+        triads.append((f1, f1, f2))
         triads.append((f1, f2, f3))
+        triads.append((f1, f2, f4))
+        triads.append((f1, f3, f4))
+        triads.append((f1, f4, f6))
     else:
         triads.append((f1, 2 * f1, 3 * f1))
     t_bic_rel, bic_raw = _bicoherence_triads_timecourse(
-        X, FS, triads, bw, win_sec=0.8, step_sec=0.1
+        X, FS, triads, bw_f1, win_sec=0.8, step_sec=0.1
     )
     t_bic = t_all[0] + t_bic_rel
     raw_keys = list(bic_raw.keys())
@@ -3292,18 +3722,25 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     t_pac = t_all[0] + t_pac_rel
 
     # Kuramoto R(t)
-    t_R_rel, R_series = _kuramoto_order_series(X, FS, f1, bw)
+    t_R_rel, R_series = _kuramoto_order_series(X, FS, f1, bw_f1)
     t_R = t_all[0] + t_R_rel
     R_smooth = smooth_sec(t_R, R_series, 0.3)
 
     # SIX-PHASE DETECTION (for annotations)
-    # Extract t0_net from ign_out for phase detection anchoring
+    # Extract t0_net from ign_out for phase detection anchoring (with fallback to sr_z_peak_t)
     row = _match_ignition_event_row(ign_out, ign_win)
     t0_net = None
-    if row is not None and 't0_net' in row:
-        t0_val = row['t0_net']
-        if pd.notna(t0_val) and np.isfinite(float(t0_val)):
-            t0_net = float(t0_val)
+    if row is not None:
+        if 't0_net' in row:
+            t0_val = row['t0_net']
+            if pd.notna(t0_val) and np.isfinite(float(t0_val)):
+                t0_net = float(t0_val)
+        if t0_net is None and 'sr_z_peak_t' in row:
+            # Fallback: estimate t0 as ~3s before amplitude peak
+            sr_peak_val = row['sr_z_peak_t']
+            if pd.notna(sr_peak_val) and np.isfinite(float(sr_peak_val)):
+                sr_peak_t = float(sr_peak_val)
+                t0_net = max(ign_win[0], sr_peak_t - 3.0)
 
     # Prepare data for phase detection on ignition window
     mask_ign = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
@@ -3349,14 +3786,18 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     panel_bg = colors.get('panel_bg', '#ffffff')
     spine_color = colors.get('spine', tick_color)
 
-    fig = plt.figure(figsize=(14, 12), dpi=160)
+    fig = plt.figure(figsize=(18, 12), dpi=160)
     fig.patch.set_facecolor(panel_bg)
-    gs = GridSpec(5, 1, height_ratios=[2.3, 1.6, 1.3, 1.2, 1.2], hspace=0.5)
-    ax_spec = fig.add_subplot(gs[0])
-    ax_env = fig.add_subplot(gs[1], sharex=ax_spec)
-    ax_hsi = fig.add_subplot(gs[2], sharex=ax_spec)
-    ax_bic = fig.add_subplot(gs[3], sharex=ax_spec)
-    ax_pac = fig.add_subplot(gs[4], sharex=ax_spec)
+    # Use 2 columns: main plots (col 0) and colorbar space (col 1)
+    # This ensures all plot axes have the same width
+    # Charts below spectrogram are 10% taller: 1.6→1.76, 1.3→1.43, 1.2→1.32
+    gs = GridSpec(5, 2, height_ratios=[4.236, 2.618, 2.618, 1.618, 1.618], width_ratios=[1, 0.02],
+                  hspace=0.5, wspace=0.02)
+    ax_spec = fig.add_subplot(gs[0, 0])
+    ax_env = fig.add_subplot(gs[1, 0], sharex=ax_spec)
+    ax_hsi = fig.add_subplot(gs[4, 0], sharex=ax_spec)
+    ax_bic = fig.add_subplot(gs[2, 0], sharex=ax_spec)
+    ax_pac = fig.add_subplot(gs[3, 0], sharex=ax_spec)
 
     def _apply_sunrise_style(ax):
         ax.set_facecolor(panel_bg)
@@ -3375,54 +3816,88 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     ax_bic.set_title('Triadic Bicoherence', color=tick_color)
 
     extent = [t_spec[0], t_spec[-1], f_spec[0], f_spec[-1]]
-    im = ax_spec.imshow(spec_z, extent=extent, origin='lower', aspect='auto', cmap=spec_cmap, vmin=-3, vmax=3)
+    im = ax_spec.imshow(spec_z, extent=extent, origin='lower', aspect='auto', cmap=spec_cmap, vmin=-3, vmax=3, interpolation='lanczos')
     ax_spec.set_facecolor(panel_bg)
     ax_spec.set_ylabel('Frequency (Hz)', color=tick_color)
     ax_spec.set_title('SR-focused spectrogram (row-z)', color=tick_color)
-    ring_offset = getattr(cfg, 'ring_offset', 1.5)
-    for freq in (f1, f2, f3):
-        ax_spec.axhline(freq, color='white', linestyle='--', linewidth=1.0, alpha=0.85)
-        for delta in (-ring_offset, ring_offset):
-            ctrl = freq + delta
-            if f_spec[0] <= ctrl <= f_spec[-1]:
-                ax_spec.axhline(ctrl, color=colors['off_harmonic'], linestyle=':', linewidth=0.9, alpha=0.85)
+    # Draw white dashed horizontal lines for all harmonics in ladder only
+    for freq in ladder:
+        if f_spec[0] <= freq <= f_spec[-1]:
+            ax_spec.axhline(freq, color='white', linestyle='--', linewidth=1.0, alpha=0.85)
     ax_spec.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
     ax_spec.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
     for spine in ax_spec.spines.values():
         spine.set_color(spine_color)
     ax_spec.tick_params(colors=tick_color, which='both')
-    cbar = fig.colorbar(im, ax=ax_spec, pad=0.01, fraction=0.04)
+    # Create colorbar in dedicated axis (column 1, row 0) to preserve plot alignment
+    cax = fig.add_subplot(gs[0, 1])
+    cbar = fig.colorbar(im, cax=cax)
     cbar.ax.yaxis.set_tick_params(color=tick_color)
     for label in cbar.ax.get_yticklabels():
         label.set_color(tick_color)
     cbar.set_label('z (per frequency)', color=tick_color)
 
-    ax_env.plot(t_all, env1_z, label=f'{f1:.2f} Hz', color=colors['fundamental'], linewidth=1.8)
-    ax_env.plot(t_all, env2_z, label=f'{f2:.2f} Hz', color=colors['harm2'], linewidth=1.3)
-    ax_env.plot(t_all, env3_z, label=f'{f3:.2f} Hz', color=colors['harm3'], linewidth=1.3)
+    # Plot all harmonics with color cycling
+    # Generate distinguishable colors for any number of harmonics
+    n_harmonics = len(ladder)
+    if n_harmonics <= 10:
+        # Use tab10 colormap for up to 10 harmonics (distinct categorical colors)
+        cmap = plt.cm.get_cmap('tab10')
+        harmonic_colors = [cmap(i) for i in range(n_harmonics)]
+    else:
+        # Use hsv colormap for more than 10 harmonics
+        cmap = plt.cm.get_cmap('hsv')
+        harmonic_colors = [cmap(i / n_harmonics) for i in range(n_harmonics)]
+
+    for i, (freq, env_z) in enumerate(zip(ladder, harmonic_envs_z)):
+        color = harmonic_colors[i]
+        lw = 1.8 if i == 0 else max(1.0, 1.3 - i * 0.05)  # Decrease linewidth for higher harmonics
+        ax_env.plot(t_all, env_z, label=f'{freq:.2f} Hz', color=color, linewidth=lw)
+
     ax_env.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
     ax_env.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
     ax_env.set_ylabel('Envelope z', color=tick_color)
     ax_env.set_title('Harmonic envelopes (z) with PLV', color=tick_color)
-    leg_env = ax_env.legend(loc='upper left', fontsize=8, frameon=False)
+    leg_env = ax_env.legend(loc='upper left', fontsize=7 if len(ladder) > 3 else 8,
+                            frameon=False, ncol=1 if len(ladder) <= 4 else 2)
     if leg_env:
         for text in leg_env.get_texts():
             text.set_color(tick_color)
     ax_env.axhline(0, color=colors['baseline_line'], linestyle='--', linewidth=0.8)
+
+    # Fit envelope y-axis to visible data range (all harmonics)
+    visible_mask = (t_all >= t0) & (t_all <= t1)
+    visible_env_list = [env_z[visible_mask] for env_z in harmonic_envs_z if np.isfinite(env_z).any()]
+    if visible_env_list:
+        visible_env = np.concatenate(visible_env_list)
+        env_min, env_max = np.nanmin(visible_env), np.nanmax(visible_env)
+        env_range = env_max - env_min
+        pad = 0.15 * env_range  # 15% padding for phase labels
+        ax_env.set_ylim(env_min - pad, env_max + pad)
+    else:
+        ax_env.set_ylim(-3, 3)  # Default range if no valid data
 
     ax_env2 = ax_env.twinx()
     ax_env2.tick_params(colors=colors['plv_mean'], which='both')
     ax_env2.yaxis.label.set_color(colors['plv_mean'])
     ax_env2.spines['right'].set_color(spine_color)
     # msc_color = colors.get('msc', colors.get('bic1', '#ff8c00'))
-    ax_env2.plot(plv_times, plv_series, linestyle='--', color=colors['plv'], linewidth=1.4, label='PLV @ fundamental')
+    # Plot PLV with low zorder so it appears below phase labels
+    ax_env2.plot(plv_times, plv_series, linestyle='--', color=colors['plv'], linewidth=1.4, label='PLV @ fundamental', zorder=1)
+    # Make main axis render on top so phase labels (zorder=1000) appear above twin axis content
+    ax_env.set_zorder(ax_env2.get_zorder() + 1)
+    ax_env.patch.set_visible(False)  # Hide main axis background so twin axis content shows through
     # if msc_series.size:
     #     msc_series_s = smooth_sec(msc_times, msc_series, 0.25)
     #     ax_env2.plot(msc_times, msc_series_s, linestyle='-', color=msc_color, linewidth=1.3, alpha=0.85, label='MSC @ fundamental')
     ax_env2.set_ylabel('Synchrony (0–1)')
-    ax_env2.set_ylim(0.0, 1.00)
-    ax_env2.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
-    ax_env2.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+
+
+    ax_env2.set_ylim(0.2, 1.00)
+
+    # Don't draw window_fill on twin axis - already drawn on main axis to avoid double-shading
+    # ax_env2.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    # ax_env2.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
     handles2, labels2 = ax_env2.get_legend_handles_labels()
     if handles2:
         leg2 = ax_env2.legend(handles2, labels2, loc='upper right', fontsize=8, frameon=False)
@@ -3431,10 +3906,10 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
 
     window_mask = (t_all >= ign_win[0]) & (t_all <= ign_win[1])
     z_peak = float(np.nanmax(env1_z[window_mask])) if np.any(window_mask) else np.nan
-    if np.any(window_mask):
-        idx_peak = np.nanargmax(env1_z[window_mask])
-        t_peak = t_all[window_mask][idx_peak]
-        ax_env.plot(t_peak, z_peak, marker='o', color=colors['fundamental'])
+    # if np.any(window_mask):
+    #     idx_peak = np.nanargmax(env1_z[window_mask])
+    #     t_peak = t_all[window_mask][idx_peak]
+    #     ax_env.plot(t_peak, z_peak, marker='o', color=colors['fundamental'])
 
     plv_win_mask = (plv_times >= ign_win[0]) & (plv_times <= ign_win[1])
     plv_mean = float(np.nanmean(plv_series[plv_win_mask])) if np.any(plv_win_mask) else np.nan
@@ -3446,6 +3921,59 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
         if np.isfinite(msc_mean):
             ax_env2.axhline(msc_mean, color=msc_color, linestyle='-.', linewidth=0.9, alpha=0.8)
 
+
+
+    # Generate distinguishable colors for any number of triads using colormap
+    num_triads = len(triad_keys)
+    if num_triads <= 10:
+        # Use tab10 colormap for up to 10 triads (distinct categorical colors)
+        cmap = plt.cm.get_cmap('tab10')
+        triad_colors = [cmap(i) for i in range(num_triads)]
+    else:
+        # Use hsv colormap for more than 10 triads
+        cmap = plt.cm.get_cmap('hsv')
+        triad_colors = [cmap(i / num_triads) for i in range(num_triads)]
+
+    bic_peaks = []
+    for idx, key in enumerate(triad_keys):
+        series = bic[key]
+        color = triad_colors[idx]
+        # Use thicker lines for more important (earlier) triads
+        lw = max(1.1, 1.5 - idx * 0.1)
+        ax_bic.plot(t_bic, series, color=color, linewidth=lw, label=key, alpha=0.9)
+        win_mask = (t_bic >= ign_win[0]) & (t_bic <= ign_win[1])
+        # if np.any(win_mask):
+        #     peak_idx = np.nanargmax(series[win_mask])
+        #     abs_idx = np.flatnonzero(win_mask)[peak_idx]
+        #     ax_bic.plot(t_bic[abs_idx], series[abs_idx], marker='*', color=triad_colors[idx % len(triad_colors)], markersize=10)
+        #     bic_peaks.append(float(series[abs_idx]))
+    ax_bic.set_ylabel('Bicoherence', color=tick_color)
+    ax_bic.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
+    ax_bic.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
+
+    # Horizontal legend inside chart at top (max 4 columns to prevent overlap)
+    ncol = min(10, num_triads)  # Max 4 columns for readability
+    leg_bic = ax_bic.legend(loc='upper center', ncol=ncol, fontsize=7, frameon=True)
+    if leg_bic:
+        leg_bic.get_frame().set_facecolor('white')
+        leg_bic.get_frame().set_alpha(0.618)
+        leg_bic.set_zorder(2000)  # Ensure legend is on top of everything
+        for text in leg_bic.get_texts():
+            text.set_color(tick_color)
+
+    # Fit bicoherence y-axis to visible data range
+    bic_visible_mask = (t_bic >= t0) & (t_bic <= t1)
+    bic_all_visible = []
+    for key in triad_keys:
+        series = bic[key]
+        bic_all_visible.extend(series[bic_visible_mask])
+    if len(bic_all_visible) > 0:
+        bic_all_visible = np.array(bic_all_visible)
+        bic_min, bic_max = np.nanmin(bic_all_visible), np.nanmax(bic_all_visible)
+        bic_range = bic_max - bic_min
+        bic_pad = 0.2 * bic_range  # 15% padding for phase labels
+        ax_bic.set_ylim(bic_min - 0.15 * bic_range, bic_max + bic_pad)
+
     ax_hsi.plot(t_all, delta_hsi, color=colors['delta_hsi'], linewidth=1.5)
     ax_hsi.fill_between(t_all, 0, delta_hsi, where=delta_hsi >= 0, color=colors['delta_hsi'], alpha=0.25)
     ax_hsi.axhline(0, color=colors['baseline_line'], linestyle='--', linewidth=0.8)
@@ -3454,24 +3982,17 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     ax_hsi.set_ylabel('ΔHSI (a.u.)', color=tick_color)
     ax_hsi.set_title('Harmonic tightening (ΔHSI proxy)', color=tick_color)
 
-    triad_colors = [colors['bic1'], colors['bic2']]
-    bic_peaks = []
-    for idx, key in enumerate(triad_keys):
-        series = bic[key]
-        ax_bic.plot(t_bic, series, color=triad_colors[idx % len(triad_colors)], linewidth=1.3, label=key)
-        win_mask = (t_bic >= ign_win[0]) & (t_bic <= ign_win[1])
-        if np.any(win_mask):
-            peak_idx = np.nanargmax(series[win_mask])
-            abs_idx = np.flatnonzero(win_mask)[peak_idx]
-            ax_bic.plot(t_bic[abs_idx], series[abs_idx], marker='*', color=triad_colors[idx % len(triad_colors)], markersize=10)
-            bic_peaks.append(float(series[abs_idx]))
-    ax_bic.set_ylabel('Bicoherence', color=tick_color)
-    ax_bic.axvspan(t0, ign_win[0], color=colors['window_fill'], alpha=0.25)
-    ax_bic.axvspan(ign_win[1], t1, color=colors['window_fill'], alpha=0.25)
-    leg_bic = ax_bic.legend(loc='upper right', fontsize=8, frameon=False)
-    if leg_bic:
-        for text in leg_bic.get_texts():
-            text.set_color(tick_color)
+    # Fit ΔHSI y-axis to visible data range
+    hsi_visible = delta_hsi[visible_mask]
+    hsi_min, hsi_max = np.nanmin(hsi_visible), np.nanmax(hsi_visible)
+    # Ensure zero baseline is always visible
+    hsi_min = min(hsi_min, 0)
+    hsi_max = max(hsi_max, 0)
+    hsi_range = hsi_max - hsi_min
+    hsi_pad = 0.15 * hsi_range  # 15% padding for phase labels
+    ax_hsi.set_ylim(hsi_min - hsi_pad, hsi_max + hsi_pad)
+
+
 
     pac_base_mask = (t_pac >= (ign_win[0] - pad)) & (t_pac < ign_win[0])
     pac_win_mask = (t_pac >= ign_win[0]) & (t_pac <= ign_win[1])
@@ -3488,12 +4009,23 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
     ax_pac.set_xlabel('Time (s)', color=tick_color)
     ax_pac.set_title('θ→γ PAC (MVL)', color=tick_color)
 
-    # Add phase annotations to all panels (lines and shading only, no labels)
-    annotate_phases(ax_spec, phases, f_spec[0], f_spec[-1], show_labels=False)
-    annotate_phases(ax_env, phases, *ax_env.get_ylim(), show_labels=False)
-    annotate_phases(ax_hsi, phases, *ax_hsi.get_ylim(), show_labels=False)
-    annotate_phases(ax_bic, phases, *ax_bic.get_ylim(), show_labels=False)
-    annotate_phases(ax_pac, phases, *ax_pac.get_ylim(), show_labels=False)
+    # Fit PAC y-axis to visible data range
+    pac_visible_mask = (t_pac >= t0) & (t_pac <= t1)
+    pac_visible = pac_vals[pac_visible_mask]
+    if pac_visible.size > 0:
+        pac_min, pac_max = np.nanmin(pac_visible), np.nanmax(pac_visible)
+        pac_range = pac_max - pac_min
+        pac_pad = 0.25 * pac_range  # 15% padding for phase labels
+        ax_pac.set_ylim(pac_min - pac_pad, pac_max + 0.15 * pac_range)
+
+    # Add phase annotations to all panels
+    # For ax_spec (SR-focused spectrogram): only lines, no shading, no labels
+    annotate_phases(ax_spec, phases, f_spec[0], f_spec[-1], show_labels=False, show_shading=False)
+    # All other panels: lines, shading, and labels
+    annotate_phases(ax_env, phases, *ax_env.get_ylim(), show_labels=True)
+    annotate_phases(ax_hsi, phases, *ax_hsi.get_ylim(), show_labels=True)
+    annotate_phases(ax_bic, phases, *ax_bic.get_ylim(), show_labels=True)
+    annotate_phases(ax_pac, phases, *ax_pac.get_ylim(), show_labels=True)
 
     ax_spec.set_xlim(t0, t1)
     for ax in (ax_env, ax_hsi, ax_bic, ax_pac):
@@ -3526,7 +4058,7 @@ def sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, sessi
 def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg, session_name):
     TIME_COL = 'Timestamp'
     FS = cfg.fs or _infer_fs(records, TIME_COL)
-    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    pack = build_ignition_feature_pack(records, [ign_win], cfg=cfg)
     provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
     t = provider.t()
     zf = provider.z_fund()
@@ -3547,7 +4079,7 @@ def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg,
             band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl
         )
     t_spec, f_spec, S_spec = _slice_spec_to_window(spec, (t.min(), t.max()), min_cols=40)
-    _, slopes_raw = _spectral_slope_series(t_spec, f_spec, S_spec, exclude_centers=ladder[:3], exclude_bw=1.0)
+    _, slopes_raw = _spectral_slope_series(t_spec, f_spec, S_spec, exclude_centers=ladder, exclude_bw=1.0)  # Exclude all harmonics
     slopes = smooth_sec(t_spec, slopes_raw, 1.0)
 
     baseline_offset = 60.0
@@ -3559,7 +4091,7 @@ def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg,
         tWb, fWb, SWb = window_spec_median(records, baseline_window, channels=electrodes, fs=FS,
                                            time_col=TIME_COL, band=(2,60), win_sec=cfg.spec_win, overlap=cfg.spec_ovl)
         tWb = tWb + cfg.spec_win/2.0
-        _, slopes_base_raw = _spectral_slope_series(tWb, fWb, SWb, exclude_centers=ladder[:3], exclude_bw=1.0)
+        _, slopes_base_raw = _spectral_slope_series(tWb, fWb, SWb, exclude_centers=ladder, exclude_bw=1.0)  # Exclude all harmonics
         slopes_base = smooth_sec(tWb, slopes_base_raw, 1.0)
 
     fig, ax = plt.subplots(figsize=(14, 6), dpi=160)
@@ -3586,13 +4118,20 @@ def ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, cfg,
     ax_twin.set_ylabel('Normalized (0–1)')
     ax_twin.set_ylim(-0.1, 1.1)
 
-    # Extract t0_net from ign_out for phase detection anchoring
+    # Extract t0_net from ign_out for phase detection anchoring (with fallback to sr_z_peak_t)
     row = _match_ignition_event_row(ign_out, ign_win)
     t0_net = None
-    if row is not None and 't0_net' in row:
-        t0_val = row['t0_net']
-        if pd.notna(t0_val) and np.isfinite(float(t0_val)):
-            t0_net = float(t0_val)
+    if row is not None:
+        if 't0_net' in row:
+            t0_val = row['t0_net']
+            if pd.notna(t0_val) and np.isfinite(float(t0_val)):
+                t0_net = float(t0_val)
+        if t0_net is None and 'sr_z_peak_t' in row:
+            # Fallback: estimate t0 as ~3s before amplitude peak
+            sr_peak_val = row['sr_z_peak_t']
+            if pd.notna(sr_peak_val) and np.isfinite(float(sr_peak_val)):
+                sr_peak_t = float(sr_peak_val)
+                t0_net = max(ign_win[0], sr_peak_t - 3.0)
 
     phases = _detect_ignition_phases(
         t, zf_z, provider.plv_fund(), provider.hsi(), provider.z_h2(), provider.z_h3(),
@@ -3613,7 +4152,7 @@ def six_panel_3(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
     TIME_COL = 'Timestamp'
     FS = cfg.fs or _infer_fs(records, TIME_COL)
     t_all = np.asarray(records[TIME_COL], float)
-    pack = build_ignition_feature_pack(records, ign_win, cfg=cfg)
+    pack = build_ignition_feature_pack(records, [ign_win], cfg=cfg)
     provider = PackProvider(pack).slice(ign_win[0], ign_win[1])
     t = provider.t()
     zf = provider.z_fund()
@@ -3642,9 +4181,16 @@ def six_panel_3(records, electrodes, ign_win, ign_out, ladder, cfg, session_name
 
     # 3-4) Topology metrics
     # Build functional connectivity using PLV
+    # Handle bw_hz as either scalar or array
+    if np.ndim(cfg.bw_hz) == 0:  # scalar
+        bw_f1 = float(cfg.bw_hz)
+    else:  # array - use first element for fundamental frequency
+        bw_array = np.asarray(cfg.bw_hz)
+        bw_f1 = bw_array[0]
+
     X_ign = X[:, mask_ign]
-    plv_matrix = _plv_matrix(X_ign, FS, ladder[0], cfg.bw_hz)
-    baseline_matrix = _plv_matrix(X[:, mask_base], FS, ladder[0], cfg.bw_hz)
+    plv_matrix = _plv_matrix(X_ign, FS, ladder[0], bw_f1)
+    baseline_matrix = _plv_matrix(X[:, mask_base], FS, ladder[0], bw_f1)
     import networkx as nx
     G_ign = nx.from_numpy_array(plv_matrix)
     G_base = nx.from_numpy_array(baseline_matrix)

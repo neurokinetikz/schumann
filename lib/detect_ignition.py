@@ -17,7 +17,16 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import signal
+from scipy.signal import welch
 from scipy.stats import zscore
+
+# FOOOF-based harmonic detection
+try:
+    from lib.fooof_harmonics import detect_harmonics_fooof
+    FOOOF_AVAILABLE = True
+except ImportError:
+    FOOOF_AVAILABLE = False
+    print("Warning: fooof_harmonics not available. Using PSD-only harmonic detection.")
 
 # ---------- small utilities ----------
 
@@ -591,9 +600,9 @@ def detect_ignitions_session(
     eeg_channels: Optional[List[str]] = None,
     time_col: str = 'Timestamp',
     out_dir: str = 'exports_ignitions/S01',
-    center_hz: float = 7.83, 
+    center_hz: float = 7.83,
     half_bw_hz: float = 0.5,
-    smooth_sec: float = 0.25, 
+    smooth_sec: float = 0.25,
     z_thresh: float = 2.5,
     min_isi_sec: float = 2.0, window_sec: float = 20.0, merge_gap_sec: float = 5.0,
     R_band: Tuple[float, float] = (8,13), R_win_sec: float = 1.0, R_step_sec: float = 0.25,
@@ -605,6 +614,16 @@ def detect_ignitions_session(
     harmonics: Tuple[int,...] = (2,3,4,5,6,7),
     harmonics_hz: Optional[List[float]] = None,
     harmonic_bw_hz: Optional[float] = None,
+    harmonic_method: str = 'psd',  # 'psd', 'fooof_session', 'fooof_event', 'fooof_hybrid'
+    fooof_freq_range: Optional[Tuple[float, float]] = None,
+    fooof_freq_ranges: Optional[List[List[float]]] = None,
+    fooof_max_n_peaks: int = 15,
+    fooof_peak_threshold: float = 2.0,
+    fooof_min_peak_height: float = 0.05,
+    fooof_peak_width_limits: Tuple[float, float] = (1.0, 8.0),
+    fooof_match_method: str = 'power',  # 'distance', 'power', 'average'
+    nperseg_sec: float = 4.0,  # Spectral resolution control (seconds)
+    additional_windows: Optional[List[Tuple[float, float]]] = None,  # Extra windows to analyze
     make_passport: bool = True,
     show: bool = True,
     verbose: bool = True,
@@ -617,9 +636,14 @@ def detect_ignitions_session(
     _ensure_dir(out_dir)
     time_col = ensure_timestamp_column(RECORDZ, time_col=time_col, default_fs=128.0)
     fs = infer_fs(RECORDZ, time_col)
-    half_bw = _scalar_bandwidth(half_bw_hz, default=0.5)
-    half_bw_hz = half_bw
+
+    # Handle half_bw_hz as scalar or list - extract first element for initial detection
+    half_bw_arr = np.atleast_1d(half_bw_hz)
+    half_bw_scalar = float(half_bw_arr[0])
+
     t = pd.to_numeric(RECORDZ[time_col], errors='coerce').values.astype(float)
+    # Convert to relative time (start from 0)
+    t = t - t[0]
 
     # --- 1) SR envelope z(t) & onsets (proposal via all eeg_channels) ---
     Y = np.vstack([get_series(RECORDZ, ch) for ch in eeg_channels])
@@ -633,10 +657,10 @@ def detect_ignitions_session(
             sr_env_cache[key] = _sr_envelope_z_series(y, fs, f0, bw, smooth_sec)
         return sr_env_cache[key]
 
-    z = _get_sr_env_z(center_hz, half_bw_hz)
+    z = _get_sr_env_z(center_hz, half_bw_scalar)
     mask = z >= z_thresh
     on_idx = np.where(np.diff(mask.astype(int)) == 1)[0] + 1
-    
+
     onsets, last_t = [], -np.inf
     for i in on_idx:
         if t[i] - last_t >= min_isi_sec:
@@ -654,6 +678,15 @@ def detect_ignitions_session(
             ign.append((a, b))
     t0s, t1s = float(t[0]), float(t[-1])
     ign = [(max(t0s,a), min(t1s,b)) for (a,b) in ign if (b-a) > 1.0]
+
+    # Add additional windows (e.g., random windows for null control tests)
+    if additional_windows is not None and len(additional_windows) > 0:
+        for (a, b) in additional_windows:
+            # Clip to recording bounds
+            a_clip = max(t0s, a)
+            b_clip = min(t1s, b)
+            if b_clip - a_clip > 1.0:
+                ign.append((a_clip, b_clip))
 
     # --- 2b) rounded windows
     rounded = []
@@ -687,8 +720,106 @@ def detect_ignitions_session(
     else:
         harmonic_centers = [k*center_hz for k in harmonics]
 
+    # Save canonical harmonic centers for per-event FOOOF seed frequencies
+    # (harmonic_centers may be updated by session FOOOF, but per-event should use canonical)
+    canonical_harmonic_centers = list(harmonic_centers)
+
+    # --- FOOOF session-level harmonic detection (if requested) ---
+    use_event_fooof = False
+    use_event_psd = True
+    session_fooof_result = None
+
+    if harmonic_method in ['fooof', 'fooof_session', 'fooof_event', 'fooof_hybrid']:
+        if not FOOOF_AVAILABLE:
+            if verbose:
+                print(f"⚠️  harmonic_method='{harmonic_method}' requires fooof_harmonics, falling back to 'psd'")
+            harmonic_method = 'psd'
+        else:
+            if harmonic_method in ['fooof_session', 'fooof_hybrid']:
+                # Run FOOOF once on entire session
+                try:
+                    if verbose:
+                        print(f"Running session-level FOOOF harmonic detection...")
+
+                    # Prepare canonical frequencies for FOOOF seeding
+                    # If using freq_ranges, harmonic_centers already has all harmonics
+                    # Otherwise, add center_hz to harmonics
+                    if fooof_freq_ranges is not None:
+                        f_can = harmonic_centers
+                    else:
+                        f_can = [center_hz] + harmonic_centers
+
+                    # Determine freq_range for FOOOF
+                    if fooof_freq_range is not None:
+                        freq_range_use = fooof_freq_range
+                    else:
+                        freq_range_use = (1.0, min(50.0, fs/2.0 - 1.0))
+
+                    # Use full bandwidth array if available, otherwise use scalar
+                    search_hb = half_bw_arr.tolist() if half_bw_arr.size > 1 else half_bw_scalar
+
+                    session_harmonics, session_fooof_result = detect_harmonics_fooof(
+                        records=RECORDZ,
+                        channels=eeg_channels,
+                        fs=fs,
+                        time_col=time_col,
+                        f_can=f_can,
+                        freq_range=freq_range_use,
+                        freq_ranges=fooof_freq_ranges,
+                        combine='median',
+                        search_halfband=search_hb,
+                        per_harmonic_fits=(fooof_freq_ranges is not None),
+                        nperseg_sec=nperseg_sec,
+                        max_n_peaks=fooof_max_n_peaks,
+                        peak_threshold=fooof_peak_threshold,
+                        min_peak_height=fooof_min_peak_height,
+                        peak_width_limits=fooof_peak_width_limits,
+                        match_method=fooof_match_method
+                    )
+
+                    # Override harmonic_centers with FOOOF-detected frequencies
+                    harmonic_centers = list(session_harmonics)
+
+                    if verbose:
+                        print(f"  FOOOF harmonics: {[f'{h:.2f}' for h in harmonic_centers]}")
+                        # Handle both scalar and list aperiodic values
+                        if isinstance(session_fooof_result.aperiodic_exponent, list):
+                            beta_str = f"[{', '.join([f'{b:.3f}' for b in session_fooof_result.aperiodic_exponent])}]"
+                        else:
+                            beta_str = f"{session_fooof_result.aperiodic_exponent:.3f}"
+                        print(f"  Aperiodic β: {beta_str}")
+
+                        if isinstance(session_fooof_result.r_squared, list):
+                            r2_str = f"[{', '.join([f'{r:.3f}' for r in session_fooof_result.r_squared])}]"
+                        else:
+                            r2_str = f"{session_fooof_result.r_squared:.3f}"
+                        print(f"  R²: {r2_str}")
+
+                    # For hybrid mode, also use per-event FOOOF
+                    if harmonic_method == 'fooof_hybrid':
+                        use_event_fooof = True
+                        use_event_psd = False
+                        if verbose:
+                            print(f"  Using per-event FOOOF for refinement...")
+                    else:
+                        use_event_fooof = False
+                        use_event_psd = False
+
+                except Exception as e:
+                    if verbose:
+                        print(f"⚠️  Session FOOOF failed: {e}")
+                        print(f"  Falling back to canonical harmonics")
+                    use_event_psd = True
+
+            elif harmonic_method in ['fooof', 'fooof_event']:
+                # Use per-event FOOOF (handled in event loop)
+                use_event_fooof = True
+                use_event_psd = False
+                if verbose:
+                    print(f"Using per-event FOOOF harmonic detection...")
+
     if harmonic_bw_hz is None:
-        harmonic_bw_list = [half_bw] * len(harmonic_centers)
+        harmonic_bw_list = [half_bw_scalar] * len(harmonic_centers)
     else:
         hb_arr = np.atleast_1d(harmonic_bw_hz)
         if hb_arr.size == 1:
@@ -705,13 +836,13 @@ def detect_ignitions_session(
         if (f0 + bw) < (fs/2.0 - 1e-3)
     ]
     if not valid_pairs:
-        valid_pairs = [(2 * center_hz, half_bw)]
+        valid_pairs = [(2 * center_hz, half_bw_scalar)]
     valid_harmonics = [f for f, _ in valid_pairs]
     valid_bandwidths = [bw for _, bw in valid_pairs]
-    hbw = valid_bandwidths[0] if valid_bandwidths else half_bw
+    hbw = valid_bandwidths[0] if valid_bandwidths else half_bw_scalar
 
     base_idx = None
-    base_tolerance = max(half_bw_hz, 0.8)
+    base_tolerance = max(half_bw_scalar, 0.8)
     for k, f0 in enumerate(valid_harmonics):
         if abs(f0 - center_hz) <= base_tolerance:
             base_idx = k
@@ -721,7 +852,7 @@ def detect_ignitions_session(
         if idx == 0:
             if base_idx is not None and base_idx < len(valid_bandwidths):
                 return valid_bandwidths[base_idx]
-            return half_bw_hz
+            return half_bw_scalar
         if not valid_bandwidths:
             return hbw
         if base_idx is None:
@@ -751,30 +882,137 @@ def detect_ignitions_session(
 
     ch_short = [c.split('.',1)[-1] for c in eeg_channels]
 
-    import test, harmonics
-
     event_windows: List[Tuple[float, float]] = []
 
     for (a, b) in ign:
-
-        start_idx = int(a * fs)
-        end_idx = int(b * fs)
-        eeg_segment = RECORDZ.iloc[start_idx:end_idx, :]
-        ignition_freqs = harmonics.estimate_session_sr_harmonics(eeg_segment, eeg_channels, 128, 
-                                                        canonical_harmonics=harmonics_hz, search_band=half_bw_hz)
 
         i0 = max(0, int(round(a*fs)))
         i1 = min(L, int(round(b*fs)))
         if i1 - i0 < int(2*fs):
             continue
         Xw = X[:, i0:i1]
-        max_modes = min(3, len(ignition_freqs))
 
-        # virtual SR
-        v_sr, w_sr = _build_virtual_sr(Xw, fs, ignition_freqs[0], half_bw_hz, mode=sr_reference)
+        # Per-event harmonic estimation: FOOOF or PSD method
+        event_beta = np.nan
+        event_r2 = np.nan
+
+        if use_event_fooof:
+            # FOOOF per-event detection
+            try:
+                # Convert sample indices to time bounds
+                t_start = a
+                t_end = b
+
+                # Determine freq_range for FOOOF
+                if fooof_freq_range is not None:
+                    freq_range_use = fooof_freq_range
+                else:
+                    freq_range_use = (1.0, min(50.0, fs/2.0 - 1.0))
+
+                # Use full bandwidth array if available, otherwise use scalar
+                search_hb = half_bw_arr.tolist() if half_bw_arr.size > 1 else half_bw_scalar
+
+                # Run FOOOF on this event window
+                event_harmonics, event_fooof_result = detect_harmonics_fooof(
+                    records=RECORDZ,
+                    channels=eeg_channels,
+                    fs=fs,
+                    time_col=time_col,
+                    window=[t_start, t_end],
+                    f_can=canonical_harmonic_centers,  # Use CANONICAL as seeds (not session-detected)
+                    freq_range=freq_range_use,
+                    freq_ranges=fooof_freq_ranges,
+                    combine='median',
+                    search_halfband=search_hb,
+                    per_harmonic_fits=(fooof_freq_ranges is not None) or True,
+                    nperseg_sec=nperseg_sec,
+                    peak_width_limits=fooof_peak_width_limits,
+                    min_peak_height=fooof_min_peak_height,
+                    max_n_peaks=fooof_max_n_peaks,
+                    peak_threshold=fooof_peak_threshold,
+                    match_method=fooof_match_method
+                )
+
+                # Store both frequencies and powers for output generation
+                ignition_freqs = list(event_harmonics)
+                ignition_powers = list(event_fooof_result.harmonic_powers)
+
+                # Store FOOOF metrics
+                if isinstance(event_fooof_result.aperiodic_exponent, list):
+                    event_beta = np.mean(event_fooof_result.aperiodic_exponent)
+                else:
+                    event_beta = event_fooof_result.aperiodic_exponent
+
+                if isinstance(event_fooof_result.r_squared, list):
+                    event_r2 = np.mean(event_fooof_result.r_squared)
+                else:
+                    event_r2 = event_fooof_result.r_squared
+
+            except Exception as e:
+                if verbose:
+                    print(f"⚠️  Event FOOOF failed at t={a:.1f}s: {e}, using canonical")
+                ignition_freqs = list(harmonic_centers)
+                ignition_powers = [np.nan] * len(harmonic_centers)
+
+        elif use_event_psd or (not use_event_fooof and harmonic_method == 'psd'):
+            # Two-pass Welch PSD refinement (original method)
+            # Compute average PSD across channels for this event window
+            psds = []
+            for ch_idx in range(Xw.shape[0]):
+                freqs, psd = welch(Xw[ch_idx, :], fs, nperseg=min(4096, Xw.shape[1]))
+                psds.append(psd)
+            avg_psd = np.mean(psds, axis=0)
+
+            # PASS 1: Search around canonical ladder centers with full bandwidth
+            first_pass_freqs = []
+            for h_idx, canonical_freq in enumerate(harmonic_centers):
+                # Get search bandwidth for this harmonic
+                bw = half_bw_arr[h_idx] if h_idx < half_bw_arr.size else half_bw_arr[-1]
+
+                # Search for peak around canonical frequency
+                mask = (freqs >= canonical_freq - bw) & (freqs <= canonical_freq + bw)
+                if np.any(mask):
+                    peak_idx = np.argmax(avg_psd[mask])
+                    peak_freq = freqs[mask][peak_idx]
+                    first_pass_freqs.append(peak_freq)
+                else:
+                    # Fallback to canonical if no data in range
+                    first_pass_freqs.append(canonical_freq)
+
+            # PASS 2: Refine around first-pass estimates with half bandwidth
+            ignition_freqs = []
+            ignition_powers = []  # Track powers for PSD method (all valid)
+            for h_idx, first_pass_freq in enumerate(first_pass_freqs):
+                # Get original bandwidth and halve it for refinement
+                bw = half_bw_arr[h_idx] if h_idx < half_bw_arr.size else half_bw_arr[-1]
+                bw_refined = 0.1
+
+                # Search for peak around first-pass estimate
+                mask = (freqs >= first_pass_freq - bw_refined) & (freqs <= first_pass_freq + bw_refined)
+                if np.any(mask):
+                    peak_idx = np.argmax(avg_psd[mask])
+                    peak_freq = freqs[mask][peak_idx]
+                    peak_power = avg_psd[mask][peak_idx]
+                    ignition_freqs.append(peak_freq)
+                    ignition_powers.append(peak_power)
+                else:
+                    # Fallback to first-pass result if no data in refined range
+                    ignition_freqs.append(first_pass_freq)
+                    ignition_powers.append(np.nan)  # Mark as not found
+
+        else:
+            # fooof_session mode: use session-level harmonics directly
+            ignition_freqs = list(harmonic_centers)
+            ignition_powers = [1.0] * len(harmonic_centers)  # Assume all valid for session mode
+
+        max_modes = len(ignition_freqs)
+
+        # virtual SR (use first bandwidth from refinement list/scalar)
+        bw0 = half_bw_arr[0] if half_bw_arr.size > 0 else half_bw_scalar
+        v_sr, w_sr = _build_virtual_sr(Xw, fs, ignition_freqs[0], bw0, mode=sr_reference)
 
         # t0 from SR1 band
-        f_lo, f_hi = ignition_freqs[0] - half_bw_hz, ignition_freqs[0] + half_bw_hz
+        f_lo, f_hi = ignition_freqs[0] - bw0, ignition_freqs[0] + bw0
         tR_ev, R_ev = _kuramoto_R_timeseries(Xw, fs, f_lo, f_hi, win_sec=2.5, step_sec=0.001)
         tR_ev = tR_ev + a
         t0_net = _detect_t0_from_R(tR_ev, R_ev, thresh=0.6)
@@ -929,7 +1167,7 @@ def detect_ignitions_session(
         # harmonics (flexible) — use overtones only (exclude base)
         HSI, MaxH = _harmonic_stack_index_flexible(
             v_sr, fs,
-            base_hz=ignition_freqs[0], base_bw_hz=half_bw_hz,
+            base_hz=ignition_freqs[0], base_bw_hz=bw0,
             harmonic_centers_hz=ignition_freqs, harmonic_bw_hz=hbw
         )
 
@@ -995,7 +1233,8 @@ def detect_ignitions_session(
 
         # Chart-style MSC: per-channel vs median reference, averaged across channels
         # This matches the visualization in six_panel_2() coherence chart
-        msc_modes = _msc_per_channel_vs_median(Xw, fs, ignition_freqs[:max_modes], half_bw_hz)
+        msc_modes = _msc_per_channel_vs_median(Xw, fs, ignition_freqs[:max_modes], bw0)
+        # Extract for backward compatibility
         msc_v = msc_modes[0] if msc_modes else np.nan
         msc_sr2_v = msc_modes[1] if len(msc_modes) > 1 else np.nan
         msc_sr3_v = msc_modes[2] if len(msc_modes) > 2 else np.nan
@@ -1005,21 +1244,21 @@ def detect_ignitions_session(
         spectral_slope = _spectral_slope_during_event(
             Xw, fs, band=(3, 45),
             exclude_centers=ignition_freqs[:min(3, len(ignition_freqs))],
-            exclude_bw=half_bw_hz
+            exclude_bw=bw0
         )
 
         # Frequency Specificity Index (power concentration at SR freqs)
         freq_specificity = _frequency_specificity_index(
             Xw, fs,
             sr_freqs=ignition_freqs[:min(3, len(ignition_freqs))],
-            bw=half_bw_hz
+            bw=bw0
         )
 
         # MSC Bandwidth Specificity Ratio (MSC sharpness at SR freqs)
         msc_bandwidth_ratio = _msc_bandwidth_specificity(
             Xw, fs,
             sr_freqs=ignition_freqs[:min(3, len(ignition_freqs))],
-            bw=half_bw_hz
+            bw=bw0
         )
 
         # --- MSC peak vs average: compute around t0_net (±2.5 s) ---
@@ -1042,7 +1281,8 @@ def detect_ignitions_session(
         i0w = max(0, int(np.floor(a*fs)))
         i1w = min(len(z), int(np.ceil(b*fs)))
         sr_z_max = sr_z_peak_t = sr_z_mean_pm5 = sr_z_mean_post5 = np.nan
-        sr2_z_max = sr3_z_max = np.nan
+        # Initialize z_max for all harmonics (will populate sr2_z_max, sr3_z_max, sr4_z_max, etc.)
+        harmonic_z_max = []
         if i1w - i0w > 0:
             seg_z = z[i0w:i1w]
             if np.all(np.isnan(seg_z)):
@@ -1061,7 +1301,7 @@ def detect_ignitions_session(
             k_postR = min(len(z), k_peak + int(5*fs))
             sr_z_mean_post5 = float(np.nanmean(z[k_peak:k_postR])) if k_postR>k_peak else np.nan
 
-            # harmonic envelopes (SR2, SR3)
+            # Compute envelope z_max for all harmonics (SR2, SR3, SR4, ...)
             for mode_idx in range(1, max_modes):
                 bw_mode = _bandwidth_for_harmonic(mode_idx)
                 z_mode = _get_sr_env_z(ignition_freqs[mode_idx], bw_mode)
@@ -1070,20 +1310,20 @@ def detect_ignitions_session(
                     peak_val = float(np.nanmax(seg_mode))
                 else:
                     peak_val = np.nan
-                if mode_idx == 1:
-                    sr2_z_max = peak_val
-                elif mode_idx == 2:
-                    sr3_z_max = peak_val
+                harmonic_z_max.append(peak_val)
 
-        # PLV around ignition (±5 s) in the first three SR bands
-        plv_mean_pm5 = plv_sr2_pm5 = plv_sr3_pm5 = np.nan
+        # Extract for backward compatibility
+        sr2_z_max = harmonic_z_max[0] if len(harmonic_z_max) > 0 else np.nan
+        sr3_z_max = harmonic_z_max[1] if len(harmonic_z_max) > 1 else np.nan
+
+        # PLV around ignition (±5 s) for all SR bands
+        plv_modes: List[float] = []
         try:
             t_event = t[i0:i1]
             if t_event.size:
                 plv_mask = (t_event >= (t0_net - 5.0)) & (t_event <= (t0_net + 5.0))
             else:
                 plv_mask = np.array([], dtype=bool)
-            plv_modes: List[float] = []
             for mode_idx in range(max_modes):
                 bw_mode = _bandwidth_for_harmonic(mode_idx)
                 f_center = ignition_freqs[mode_idx]
@@ -1098,14 +1338,13 @@ def detect_ignitions_session(
                 else:
                     val = np.nan
                 plv_modes.append(val)
-            if plv_modes:
-                plv_mean_pm5 = plv_modes[0]
-            if len(plv_modes) > 1:
-                plv_sr2_pm5 = plv_modes[1]
-            if len(plv_modes) > 2:
-                plv_sr3_pm5 = plv_modes[2]
         except Exception:
             pass
+
+        # Extract for backward compatibility
+        plv_mean_pm5 = plv_modes[0] if len(plv_modes) > 0 else np.nan
+        plv_sr2_pm5 = plv_modes[1] if len(plv_modes) > 1 else np.nan
+        plv_sr3_pm5 = plv_modes[2] if len(plv_modes) > 2 else np.nan
 
         # label: classify based on which harmonic has the strongest envelope
         if np.isfinite(sr_z_max) and np.isfinite(sr2_z_max) and np.isfinite(sr3_z_max):
@@ -1155,16 +1394,26 @@ def detect_ignitions_session(
             'sr_z_max': sr_z_max,
             'sr2_z_max': sr2_z_max,
             'sr3_z_max': sr3_z_max,
-            'sr1': f"{ignition_freqs[0]:.2f}",
-            'sr2': f"{ignition_freqs[1]:.2f}" if len(ignition_freqs) > 1 else "nan",
-            'sr3': f"{ignition_freqs[2]:.2f}" if len(ignition_freqs) > 2 else "nan",
-            'sr4': f"{ignition_freqs[3]:.2f}" if len(ignition_freqs) > 3 else "nan",
+            # Add all harmonic frequencies dynamically
+            # Show "NaN" if power is NaN (no peak detected in CANON window)
+            **{f'sr{i+1}': ("NaN" if (i < len(ignition_powers) and np.isnan(ignition_powers[i]))
+                            else f"{ignition_freqs[i]:.2f}" if i < len(ignition_freqs) else "nan")
+               for i in range(max_modes)},
+            # Add harmonic 4+ z_max values dynamically (harmonics 2-3 already defined above)
+            **{f'sr{i+2}_z_max': harmonic_z_max[i] if i < len(harmonic_z_max) else np.nan
+               for i in range(2, len(harmonic_z_max))},
             'msc_7p83_v': msc_v,
             'msc_sr2_v': msc_sr2_v,
             'msc_sr3_v': msc_sr3_v,
+            # Add harmonic 4+ MSC values dynamically (harmonics 1-3 already defined above)
+            **{f'msc_sr{i+1}_v': msc_modes[i] if i < len(msc_modes) else np.nan
+               for i in range(3, len(msc_modes))},
             'plv_mean_pm5': plv_mean_pm5,
             'plv_sr2_pm5': plv_sr2_pm5,
             'plv_sr3_pm5': plv_sr3_pm5,
+            # Add harmonic 4+ PLV values dynamically (harmonics 1-3 already defined above)
+            **{f'plv_sr{i+1}_pm5': plv_modes[i] if i < len(plv_modes) else np.nan
+               for i in range(3, len(plv_modes))},
             'HSI': HSI,
             'spectral_slope': spectral_slope,
             'freq_specificity': freq_specificity,
@@ -1177,9 +1426,12 @@ def detect_ignitions_session(
             # 'msc_7p83_v_base': msc_base, 'msc_7p83_v_auc_loc': msc_auc_loc,
             'sr_z_mean_pm5': sr_z_mean_pm5, 'sr_z_mean_post5': sr_z_mean_post5,
             # 'pac_mvl': pac_mvl,
-             'base_est_hz': base_est_hz, 
-            
+             'base_est_hz': base_est_hz,
+
             'ignition_freqs': ignition_freqs,
+            'harmonic_method': harmonic_method,
+            'fooof_beta': event_beta,
+            'fooof_r2': event_r2,
         })
         event_windows.append((a, b))
 
@@ -1234,12 +1486,14 @@ def detect_ignitions_session(
         tau = np.array([]); eta_mean = np.array([]); eta_sem = np.array([])
 
     # --- 6) Plots ---
-    plt.figure(figsize=(12.5,3))
+    fig = plt.figure(figsize=(18,4))
     plt.plot(t[:len(z)], z, lw=1.0, label='SR env z (ref)')
     plt.axhline(z_thresh, color='k', ls='--', lw=1, label='z-thresh')
     for (aa,bb) in ignition_windows_final:
         plt.axvspan(aa,bb, color='tab:orange', alpha=0.15)
-    plt.xlabel('Time (s)'); plt.ylabel('SR z'); plt.title('SR envelope z(t) with detected ignitions')
+    plt.xlabel('Time (s)'); plt.ylabel('SR z')
+    fig.suptitle('SR envelope z(t) with detected ignitions', fontsize=14, y=0.98)
+    plt.title(session_name, fontsize=10, pad=10)
     plt.legend(); plt.tight_layout(); plt.savefig(os.path.join(out_dir,'sr_env_z.png'), dpi=140)
     if show: plt.show();
     plt.close()
@@ -1264,11 +1518,60 @@ def detect_ignitions_session(
 
     if verbose:
         print("\n=== Ignition Detection — Session Summary ===\n")
-        # print(f"SR reference: {sr_channel}")
-        print("Estimated SR: ", np.round(harmonics_hz,2))
-        print(f"Ignition windows: {ignition_windows_rounded_final}")
+        print(f"Session: {session_name}")
+
+        # For FOOOF methods, show actual detected harmonics (not canonical)
+        if harmonic_method in ['fooof', 'fooof_event', 'fooof_session', 'fooof_hybrid']:
+            if not events.empty and 'ignition_freqs' in events.columns:
+                # Extract actual FOOOF-detected harmonics from events
+                all_freqs = []
+                for freqs in events['ignition_freqs']:
+                    if isinstance(freqs, str):
+                        freqs = eval(freqs)
+                    if freqs is not None and len(freqs) > 0:
+                        all_freqs.append(freqs)
+
+                if all_freqs:
+                    # Compute median across events for each harmonic
+                    n_harmonics = len(all_freqs[0])
+                    median_harmonics = []
+                    for i in range(n_harmonics):
+                        h_values = [f[i] for f in all_freqs if len(f) > i]
+                        if h_values:
+                            median_harmonics.append(np.median(h_values))
+
+                    # For hybrid mode, show both session-level and per-event harmonics
+                    if harmonic_method == 'fooof_hybrid':
+                        print("Session SR (FOOOF session):    ", np.round(harmonic_centers, 2))
+                        print("Per-Event SR (FOOOF median):   ", np.round(median_harmonics, 2))
+                        if harmonics_hz is not None:
+                            print("Canonical SR (input):          ", np.round(harmonics_hz, 2))
+                    else:
+                        # For session or event-only methods
+                        if harmonic_method == 'fooof_session':
+                            print("Estimated SR (FOOOF session):  ", np.round(median_harmonics, 2))
+                        else:
+                            print("Estimated SR (FOOOF per-event):", np.round(median_harmonics, 2))
+                        if harmonics_hz is not None:
+                            print("Canonical SR (input):          ", np.round(harmonics_hz, 2))
+                else:
+                    print("Canonical SR (no events detected): ", np.round(harmonics_hz, 2) if harmonics_hz is not None else np.round(harmonic_centers, 2))
+            else:
+                print("Canonical SR (no events detected): ", np.round(harmonics_hz, 2) if harmonics_hz is not None else np.round(harmonic_centers, 2))
+        else:
+            # PSD method: use canonical harmonics
+            if harmonics_hz is not None:
+                print("Estimated SR: ", np.round(harmonics_hz, 2))
+            else:
+                print("Harmonic Centers: ", np.round(harmonic_centers, 2))
+        print(f"\nIgnition windows: {ignition_windows_rounded_final}")
         print(f"EEG channels (n={len(eeg_channels)}): {', '.join([c.split('.',1)[-1] for c in eeg_channels])}")
-        print(f"Detection band: {center_hz:.2f}±{half_bw_hz:.2f} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
+        # Format bandwidth display (handle both scalar and list)
+        if half_bw_arr.size == 1:
+            bw_str = f"{half_bw_scalar:.2f}"
+        else:
+            bw_str = f"[{', '.join([f'{x:.2f}' for x in half_bw_arr])}]"
+        print(f"Detection band: {center_hz:.2f}±{bw_str} Hz; z-thresh={z_thresh:.2f}; window={window_sec:.1f}s; min_ISI={min_isi_sec:.1f}s")
         # print(f"R(t) band: {R_band[0]:.1f}–{R_band[1]:.1f} Hz, win={R_win_sec:.2f}s, step={R_step_sec:.2f}s")
         print(f"Event SR mode: {sr_reference}")
         harm_src = 'custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'
@@ -1324,13 +1627,26 @@ def detect_ignitions_session(
             msc_score = (0.618*msc_v + 0.236*msc_sr2_v + 0.146*msc_sr3_v)
             plv_score = (0.618*plvpm5 + 0.236*plv_sr2_pm5 + 0.146*plv_sr3_pm5)
 
-            sr_score = z_score * msc_score * plv_score / (1 + HSIv)
-            t_score = 1.0 + (2.0 - 1.0) * (1.0 - np.exp(-(dur - 20.0)/35.0))
-            score = sr_score * t_score
+            freq_specificity = col_vals('freq_specificity', fill=0.0)
+            # Based on theoretical reasoning about what freq_specificity means
+            FREQ_SPEC_MIN = 0.05  # Below this = barely distinguishable from noise
+            FREQ_SPEC_MAX = 0.35  # Above this = unrealistically narrow (measurement limit)
+
+            freq_spec_norm = np.clip(
+                (freq_specificity - FREQ_SPEC_MIN) / (FREQ_SPEC_MAX - FREQ_SPEC_MIN),
+                0.0, 1.0
+            )
+
+            freq_refinement = 0.95 + 0.10 * freq_spec_norm
+
+            sr_score = z_score**0.7 * msc_score**1.2 * plv_score * freq_refinement / (1 + HSIv)
+            
+            # t_score = 1.0 + (2.0 - 1.0) * (1.0 - np.exp(-(dur - 20.0)/35.0))
+            # score = sr_score * t_score
 
             events['sr_score'] = sr_score
-            events['t_score'] = t_score
-            events['score'] = score
+            # events['t_score'] = t_score
+            # events['score'] = score
 
             # print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
             print(f"  SR1 z max (ref)        — median [IQR]: {fmt_iqr(srmax)}")
@@ -1338,8 +1654,8 @@ def detect_ignitions_session(
             print(f"  SR3 z max (ref)        — median [IQR]: {fmt_iqr(s3rmax)}")
             print(f"  MSC@~7.8 Hz (virtual)  — median [IQR]: {fmt_iqr(msc_v)}")
             print(f"  PLV@~7.8 Hz (±5 s)     — median [IQR]: {fmt_iqr(plvpm5)}")
-            print(f"  Seed composite score   — median [IQR]: {fmt_iqr(events['seed_score'].to_numpy(dtype=float))}")
-            print(f"  Seed outflow score     — median [IQR]: {fmt_iqr(events['seed_flow_out'].to_numpy(dtype=float))}")
+            # print(f"  Seed composite score   — median [IQR]: {fmt_iqr(events['seed_score'].to_numpy(dtype=float))}")
+            # print(f"  Seed outflow score     — median [IQR]: {fmt_iqr(events['seed_flow_out'].to_numpy(dtype=float))}")
             # if not flow_role_counts.empty:
             #     flow_summary = ", ".join([f"{role}: {cnt} ({100.0*cnt/total_events:.0f}%)" for role, cnt in flow_role_counts.items()])
             #     print(f"  Seed flow roles        — {flow_summary}")
@@ -1363,24 +1679,41 @@ def detect_ignitions_session(
             # print(f"  Synchronized fraction  — median [IQR]: {fmt_iqr(SFv)}")
             
             try:
-                top_by_srz = events.sort_values('sr_score', ascending=False)
-                cols2 = [c for c in ['t_start','t0_net','sr_z_peak_t','t_end','duration_s',
-                                     'type_label','seed_hemisphere','seed_roi','seed_ch','seed_score',
-                                    #  'seed_flow_out','seed_flow_in',
-                                     'sr1','sr2','sr3','sr4',
-                                     
-                                     'sr_z_max','sr2_z_max','sr3_z_max',
-                                     'msc_7p83_v','msc_sr2_v','msc_sr3_v',
-                                     'plv_mean_pm5','plv_sr2_pm5','plv_sr3_pm5',
-                                     'HSI',
-                                     'sr_score'] if c in events.columns]
+                top_by_srz = events.sort_values('t_start', ascending=True)
+                # Build column list dynamically to include all harmonics
+                base_cols = ['t_start','t0_net','sr_z_peak_t','t_end','duration_s',
+                            'type_label','seed_hemisphere','seed_roi','seed_ch','seed_score']
+
+                # Determine max number of harmonics from the columns that exist
+                # Look for sr1, sr2, sr3, sr4, ... columns (exactly "sr" followed by digits only)
+                sr_cols_in_df = [c for c in events.columns
+                                if c.startswith('sr') and len(c) > 2 and c[2:].isdigit()]
+                num_harmonics = len(sr_cols_in_df) if sr_cols_in_df else 3
+
+                # Add harmonic frequency columns (sr1, sr2, sr3, sr4, ...)
+                sr_freq_cols = [f'sr{i+1}' for i in range(num_harmonics)]
+
+                # Add harmonic z_max columns (sr_z_max, sr2_z_max, sr3_z_max, sr4_z_max, ...)
+                sr_zmax_cols = ['sr_z_max'] + [f'sr{i+2}_z_max' for i in range(num_harmonics-1)]
+
+                # Add harmonic MSC columns (msc_7p83_v, msc_sr2_v, msc_sr3_v, ...)
+                msc_cols = ['msc_7p83_v'] + [f'msc_sr{i+2}_v' for i in range(num_harmonics-1)]
+
+                # Add harmonic PLV columns (plv_mean_pm5, plv_sr2_pm5, plv_sr3_pm5, ...)
+                plv_cols = ['plv_mean_pm5'] + [f'plv_sr{i+2}_pm5' for i in range(num_harmonics-1)]
+
+                other_cols = ['HSI', 'sr_score']
+
+                # Combine all columns and filter by what exists in the dataframe
+                cols2 = [c for c in base_cols + sr_freq_cols + sr_zmax_cols + msc_cols + plv_cols + other_cols
+                        if c in events.columns]
                 df_display = top_by_srz[cols2].copy()
                 num_cols = df_display.select_dtypes(include=[np.number]).columns
                 for col in num_cols:
                     if col in ['t_start','t_end','duration_s']:
                         df_display[col] = df_display[col].apply(lambda v: f"{v:.0f}" if pd.notnull(v) else "nan")
                     else:
-                        df_display[col] = df_display[col].apply(lambda v: f"{v:.2f}" if pd.notnull(v) else "nan")
+                        df_display[col] = df_display[col].apply(lambda v: f"{v:.3f}" if pd.notnull(v) else "nan")
                 print("\nTop events by Score (sr_z_max * msc * plv / (1 + HSI)):")
                 print(df_display.to_string(index=False, justify='center'))
             except Exception:
@@ -1404,6 +1737,8 @@ def detect_ignitions_session(
         'fs': fs,
         't_R': t_cent,
         'zR': zR,
+        'z_sr': z,  # SR envelope z-score for debugging
+        't_sr': t,  # time array for SR envelope
         'ETA_tau': tau,
         'ETA_mean': eta_mean,
         'ETA_sem': eta_sem,
