@@ -1,32 +1,46 @@
 # harmonic_resonance
 
-**Total functions:** 11 (10 public, 1 private)
+## Overview
 
-## Public Functions
+Harmonic Resonance & Spectral Mode Analysis — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 11
+- Public Functions: 10
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name: str) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_harmonic_resonance_spectral_modes` | `(RECORDS, eeg_channels, ...)` | High-resolution spectral harmonic test + spatial mode at 7–8 Hz. |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Detection
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `bandpass(x, fs, f1, f2, order)`
+## Data Processing
 
-### `welch_psd(x: np.ndarray, fs: float, nperseg_sec: float) -> Tuple[np.ndarray, np.ndarray]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `harmonic_zscores(f: np.ndarray, p: np.ndarray, harmonics, half_bw: float, side_bw: float) -> Dict[str, float]`
-> For each target harmonic h, compute z = (P(h) - median(side)) / MAD(side),
+## Utilities
 
-### `spatial_mode_8hz(X: np.ndarray, fs: float, f0, half) -> Dict[str, object]`
-> X: (n_ch, T) — band-pass 7.83±half, compute covariance → PC1 variance ratio,
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `welch_psd` | `(x, fs, nperseg_sec=4.0)` | *No description* |
+| `harmonic_zscores` | `(f, p, harmonics=..., half_bw=0.6, ...)` | For each target harmonic h, compute z = (P(h) - median(side)) / MAD(side), |
+| `spatial_mode_8hz` | `(X, fs, f0=7.83, half=0.6)` | X: (n_ch, T) — band-pass 7.83±half, compute covariance → PC1 variance ratio, |
 
-### `run_harmonic_resonance_spectral_modes(RECORDS: pd.DataFrame, eeg_channels: List[str], time_col: str, ignition_windows: Optional[List[Tuple[float, float]]], nperseg_sec: float, ...) -> Dict[str, object]`
-> High-resolution spectral harmonic test + spatial mode at 7–8 Hz.
+## Private Helpers
 
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

@@ -1,52 +1,58 @@
 # microstate_segmentation
 
-**Total functions:** 18 (17 public, 1 private)
+## Overview
 
-## Public Functions
+EEG Microstate Segmentation — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 18
+- Public Functions: 17
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name: str) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_microstate_segmentation` | `(RECORDS, eeg_channels, ...)` | Microstate maps & metrics with surrogate validation; Ignition/Baseline compar... |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Computation
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `build_X` | `(wins)` | *No description* |
 
-### `zscore(x)`
+## Detection
 
-### `bandpass(x, fs, f1, f2, order)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `gfp(X: np.ndarray) -> np.ndarray`
-> Global Field Power across channels per time (std). X: (n_ch, T)
+## Data Processing
 
-### `pick_gfp_peaks(G: np.ndarray, skip: int) -> np.ndarray`
-> Pick timepoints at local maxima of GFP with a refractory 'skip' in samples.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `normalize_maps(X: np.ndarray) -> np.ndarray`
-> Zero-mean & L2-normalize topographies columnwise. X: (n_ch, Nmaps)
+## Utilities
 
-### `kmeans_microstates(Xmaps: np.ndarray, k: int, n_init: int, seed: int) -> Tuple[np.ndarray, np.ndarray]`
-> KMeans on normalized maps (channels×N) → centers (channels×k), labels (N,)
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `gfp` | `(X)` | Global Field Power across channels per time (std). X: (n_ch, T) |
+| `pick_gfp_peaks` | `(G, skip)` | Pick timepoints at local maxima of GFP with a refractory 'skip' in samples. |
+| `normalize_maps` | `(X)` | Zero-mean & L2-normalize topographies columnwise. X: (n_ch, Nmaps) |
+| `kmeans_microstates` | `(Xmaps, k, n_init=20, seed=0)` | KMeans on normalized maps (channels×N) → centers (channels×k), labels (N,) |
+| `backfit_sequence` | `(X, centers)` | Assign each timepoint to the map with max \|corr\| (polarity-invariant). |
+| `smooth_labels` | `(labels, fs, min_dur_ms=30.0)` | Enforce minimum segment duration by merging short runs into neighbors. |
+| `microstate_metrics` | `(labels, fs, k)` | Mean duration (ms), coverage, occurrence rate (/s), transition matrix, sequen... |
+| `gev_score` | `(GFP, corr_abs)` | Global Explained Variance: sum(GFP^2 * corr^2)/sum(GFP^2). |
 
-### `backfit_sequence(X: np.ndarray, centers: np.ndarray) -> Tuple[np.ndarray, np.ndarray]`
-> Assign each timepoint to the map with max |corr| (polarity-invariant).
+## Private Helpers
 
-### `smooth_labels(labels: np.ndarray, fs: float, min_dur_ms: float) -> np.ndarray`
-> Enforce minimum segment duration by merging short runs into neighbors.
-
-### `microstate_metrics(labels: np.ndarray, fs: float, k: int) -> Dict[str, object]`
-> Mean duration (ms), coverage, occurrence rate (/s), transition matrix, sequence entropy (bits).
-
-### `gev_score(GFP: np.ndarray, corr_abs: np.ndarray) -> float`
-> Global Explained Variance: sum(GFP^2 * corr^2)/sum(GFP^2).
-
-### `run_microstate_segmentation(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], band: Optional[Tuple[float, float]], ...) -> Dict[str, object]`
-> Microstate maps & metrics with surrogate validation; Ignition/Baseline comparison.
-
-### `build_X(wins)`
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

@@ -1,57 +1,60 @@
 # network_graph_hubs
 
-**Total functions:** 20 (19 public, 1 private)
+## Overview
 
-## Public Functions
+Network Graph Metrics & Hub Analysis — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 20
+- Public Functions: 19
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name: str) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_graph_metrics_hubs` | `(RECORDS, eeg_channels, ...)` | Build functional graphs per band and state; compute small-worldness, clustering, |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Computation
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `compute_connectivity` | `(RECORDS, channels, wins, band, ...)` | Returns (W, chan_names, fs) — symmetric connectivity matrix in [0,1]. |
 
-### `zscore(x)`
+## Detection
 
-### `bandpass(x, fs, f1, f2, order)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `pli_connectivity(X: np.ndarray, fs: float, f1: float, f2: float) -> np.ndarray`
-> PLI from band-passed analytic phases. X: (n_ch, T)
+## Data Processing
 
-### `imagcoh_connectivity(X: np.ndarray, fs: float, f1: float, f2: float) -> np.ndarray`
-> Imag coherency from analytic signals. Robust to zero-lag.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `threshold_by_density(W: np.ndarray, density: float) -> np.ndarray`
-> Keep top fraction of weights (upper triangle) to reach target density.
+## Utilities
 
-### `graph_from_weighted(W: np.ndarray) -> nx.Graph`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `pli_connectivity` | `(X, fs, f1, f2)` | PLI from band-passed analytic phases. X: (n_ch, T) |
+| `imagcoh_connectivity` | `(X, fs, f1, f2)` | Imag coherency from analytic signals. Robust to zero-lag. |
+| `threshold_by_density` | `(W, density=0.2)` | Keep top fraction of weights (upper triangle) to reach target density. |
+| `graph_from_weighted` | `(W)` | *No description* |
+| `global_efficiency_weighted` | `(G)` | Weighted global efficiency: mean of 1/d_ij on finite shortest paths (length a... |
+| `char_path_length_weighted` | `(G)` | Weighted characteristic path length using 'length' as distance. |
+| `clustering_weighted` | `(G)` | *No description* |
+| `modularity_greedy` | `(G)` | Greedy modularity communities (weighted). Returns membership dict and Q. |
+| `participation_coeff` | `(W, memb)` | Weighted participation coefficient: 1 - sum_s (k_is/k_i)^2 |
+| `small_world_sigma` | `(G, n_rewire=20)` | Small-world index σ = (C/C_rand)/(L/L_rand) using degree-preserving nulls. |
 
-### `global_efficiency_weighted(G: nx.Graph) -> float`
-> Weighted global efficiency: mean of 1/d_ij on finite shortest paths (length attr).
+## Private Helpers
 
-### `char_path_length_weighted(G: nx.Graph) -> float`
-> Weighted characteristic path length using 'length' as distance.
-
-### `clustering_weighted(G: nx.Graph) -> float`
-
-### `modularity_greedy(G: nx.Graph) -> Tuple[Dict[int, int], float]`
-> Greedy modularity communities (weighted). Returns membership dict and Q.
-
-### `participation_coeff(W: np.ndarray, memb: Dict[int, int]) -> np.ndarray`
-> Weighted participation coefficient: 1 - sum_s (k_is/k_i)^2
-
-### `small_world_sigma(G: nx.Graph, n_rewire: int) -> Tuple[float, float, float]`
-> Small-world index σ = (C/C_rand)/(L/L_rand) using degree-preserving nulls.
-
-### `compute_connectivity(RECORDS: pd.DataFrame, channels: List[str], wins, band: Tuple[float, float], method: str, ...) -> Tuple[np.ndarray, List[str], float]`
-> Returns (W, chan_names, fs) — symmetric connectivity matrix in [0,1].
-
-### `run_graph_metrics_hubs(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], bands: Dict[str, Tuple[float, float]], ...) -> Dict[str, object]`
-> Build functional graphs per band and state; compute small-worldness, clustering,
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

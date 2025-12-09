@@ -1,43 +1,45 @@
 # resonant_modes
 
-**Total functions:** 15 (14 public, 1 private)
+## Overview
 
-## Public Functions
+Connectome Harmonics & Resonant Mode Analysis — Simple Graphs & Validity Tests
 
-### `infer_fs(RECORDS: pd.DataFrame, time_col: str) -> float`
+**Module Statistics:**
+- Total Functions: 15
+- Public Functions: 14
+- Private Functions: 1
 
-### `get_series(RECORDS: pd.DataFrame, name: str) -> np.ndarray`
+## Main Analysis
 
-### `slice_concat(x: np.ndarray, fs: float, windows: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_connectome_harmonics_resonance` | `(RECORDS, eeg_channels, ...)` | Build harmonic basis (connectome W_conn if provided; else functional PLV) and... |
 
-### `bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order) -> np.ndarray`
+## Data Processing
 
-### `zscore(x)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, windows)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `plv_adj(RECORDS, channels, band, windows, time_col) -> np.ndarray`
+## Utilities
 
-### `laplacian_eigendecomp(W: np.ndarray, n_modes: int) -> Tuple[np.ndarray, np.ndarray]`
-> Return first n_modes Laplacian eigenvalues & eigenvectors (columns).
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `infer_fs` | `(RECORDS, time_col='Timestamp')` | *No description* |
+| `get_series` | `(RECORDS, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `plv_adj` | `(RECORDS, channels, band, windows, ...)` | *No description* |
+| `laplacian_eigendecomp` | `(W, n_modes)` | Return first n_modes Laplacian eigenvalues & eigenvectors (columns). |
+| `project_to_harmonics` | `(X, H)` | X: (n_ch, T), H: (n_ch, K) columns orthonormal → A: (K, T). |
+| `mode_band_power` | `(A, fs, fband)` | A: (K, T) → band power per mode via band-pass + RMS. |
+| `mode_welch_power` | `(A, fs, nperseg=None)` | Return (f, Pk(f)) where Pk is (K, n_f). |
+| `msc_mode_to_sr` | `(A, sr, fs, harmonics, nperseg=None)` | *No description* |
+| `schumann_envelope` | `(sr, fs, center_hz=7.83, half_bw=0.6)` | *No description* |
+| `schumann_envelope` | `(sig, fs, center=7.83, half=0.6)` | Compatibility wrapper: accepts center/half or center_hz/half_bw. |
 
-### `project_to_harmonics(X: np.ndarray, H: np.ndarray) -> np.ndarray`
-> X: (n_ch, T), H: (n_ch, K) columns orthonormal → A: (K, T).
+## Private Helpers
 
-### `mode_band_power(A: np.ndarray, fs: float, fband: Tuple[float, float]) -> np.ndarray`
-> A: (K, T) → band power per mode via band-pass + RMS.
-
-### `mode_welch_power(A: np.ndarray, fs: float, nperseg: Optional[int]) -> Tuple[np.ndarray, np.ndarray]`
-> Return (f, Pk(f)) where Pk is (K, n_f).
-
-### `msc_mode_to_sr(A: np.ndarray, sr: np.ndarray, fs: float, harmonics: List[float], nperseg: Optional[int]) -> pd.DataFrame`
-
-### `schumann_envelope(sr: np.ndarray, fs: float, center_hz: float, half_bw: float) -> np.ndarray`
-
-### `run_connectome_harmonics_resonance(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], sr_channel: Optional[str], ...) -> Dict[str, object]`
-> Build harmonic basis (connectome W_conn if provided; else functional PLV) and test resonance:
-
-### `schumann_envelope(sig: np.ndarray, fs: float, center: float, half: float) -> np.ndarray`
-> Compatibility wrapper: accepts center/half or center_hz/half_bw.
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

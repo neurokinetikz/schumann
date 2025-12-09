@@ -1,44 +1,58 @@
 # chaos_metrics
 
-**Total functions:** 18 (17 public, 1 private)
+## Overview
 
-## Public Functions
+Recurrence Quantification & Chaos Metrics — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 18
+- Public Functions: 17
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name: str) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_rqa_chaos_metrics` | `(RECORDS, eeg_channels, ...)` | RQA + Chaos metrics with surrogate validation for ignition & baseline windows. |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Computation
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `estimate_delay_tau` | `(x, fs, max_lag_sec=2.0, method='acf-1e')` | *No description* |
+| `build_drive` | `(wins)` | *No description* |
 
-### `zscore(x)`
+## Detection
 
-### `estimate_delay_tau(x: np.ndarray, fs: float, max_lag_sec: float, method) -> int`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `takens_embedding(x: np.ndarray, m: int, tau: int) -> np.ndarray`
+## Data Processing
 
-### `false_nearest_neighbors(x: np.ndarray, tau: int, m_list: List[int], theiler: int) -> pd.DataFrame`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
 
-### `lyapunov_rosenstein(x: np.ndarray, m: int, tau: int, fs: float, theiler: int, ...) -> Dict[str, object]`
+## Utilities
 
-### `correlation_dimension_gp(X: np.ndarray, r_min_quant: float, r_max_quant: float, n_r: int) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `takens_embedding` | `(x, m, tau)` | *No description* |
+| `false_nearest_neighbors` | `(x, tau, m_list, theiler=10)` | *No description* |
+| `lyapunov_rosenstein` | `(x, m, tau, fs, theiler=10, t_fit=(1, 30))` | *No description* |
+| `correlation_dimension_gp` | `(X, r_min_quant=0.05, ...)` | *No description* |
+| `recurrence_matrix` | `(X, eps, theiler=0)` | *No description* |
+| `rqa_metrics` | `(R, lmin=2, vmin=2)` | *No description* |
+| `phase_randomize` | `(x)` | *No description* |
+| `pval` | `(obs, arr, greater=True)` | *No description* |
 
-### `recurrence_matrix(X: np.ndarray, eps: float, theiler: int) -> np.ndarray`
+## Private Helpers
 
-### `rqa_metrics(R: np.ndarray, lmin: int, vmin: int) -> Dict[str, float]`
-
-### `phase_randomize(x: np.ndarray) -> np.ndarray`
-
-### `run_rqa_chaos_metrics(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], time_col: str, ...) -> Dict[str, object]`
-> RQA + Chaos metrics with surrogate validation for ignition & baseline windows.
-
-### `build_drive(wins)`
-
-### `pval(obs, arr, greater)`
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

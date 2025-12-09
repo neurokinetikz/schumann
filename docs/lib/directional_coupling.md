@@ -1,30 +1,51 @@
 # directional_coupling
 
-**Total functions:** 11 (8 public, 3 private)
+## Overview
 
-## Public Functions
+Directional Coupling — dPLI/Granger Right‑DLPFC → Sensory (fs=128)
 
-### `find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Series]`
+**Module Statistics:**
+- Total Functions: 11
+- Public Functions: 8
+- Private Functions: 3
 
-### `default_clusters() -> Dict[str, List[str]]`
-> Default sensor clusters (10–20ish). Feel free to override.
+## Main Analysis
 
-### `cluster_signal(RECORDS: pd.DataFrame, time_col: str, names: List[str]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_directional_coupling_rdlfpc_sensory` | `(RECORDS, ignition_windows, ...)` | *No description* |
 
-### `dpli_block(x_src: np.ndarray, x_tgt: np.ndarray, fs: float, f1: float, f2: float) -> float`
-> Directed PLI (src→tgt) in [f1,f2]. Returns fraction in [0,1], 0.5 ~ no direction.
+## Plotting
 
-### `granger_block(x_src: np.ndarray, x_tgt: np.ndarray, order: int) -> float`
-> Pairwise GC advantage: F(src→tgt) − F(tgt→src). Requires statsmodels; else returns nan.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_directional_deltas` | `(df)` | *No description* |
 
-### `slice_windows_idx(t: np.ndarray, fs: float, windows: List[Tuple[float, float]]) -> List[Tuple[int, int]]`
+## Detection
 
-### `run_directional_coupling_rdlfpc_sensory(RECORDS: pd.DataFrame, ignition_windows: List[Tuple[float, float]], rebound_windows: Optional[List[Tuple[float, float]]], control_windows: Optional[List[Tuple[float, float]]], time_col: str, ...) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `find_channel_series` | `(records, ch_name)` | *No description* |
 
-### `plot_directional_deltas(df: pd.DataFrame) -> None`
+## Data Processing
 
-## Private/Helper Functions
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_windows_idx` | `(t, fs, windows)` | *No description* |
 
-- `_get_fs(RECORDS: pd.DataFrame, time_col: str)`
-- `_bandpass(x: np.ndarray, fs: float, f1: float, ...)`
-- `_find_series(RECORDS: pd.DataFrame, ch: str)`
+## Utilities
+
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `default_clusters` | `()` | Default sensor clusters (10–20ish). Feel free to override. |
+| `cluster_signal` | `(RECORDS, time_col, names)` | *No description* |
+| `dpli_block` | `(x_src, x_tgt, fs, f1, f2)` | Directed PLI (src→tgt) in [f1,f2]. Returns fraction in [0,1], 0.5 ~ no direct... |
+| `granger_block` | `(x_src, x_tgt, order=10)` | Pairwise GC advantage: F(src→tgt) − F(tgt→src). Requires statsmodels; else re... |
+
+## Private Helpers
+
+| Function | Description |
+|----------|-------------|
+| `_get_fs` | *Helper function* |
+| `_bandpass` | *Helper function* |
+| `_find_series` | *Helper function* |

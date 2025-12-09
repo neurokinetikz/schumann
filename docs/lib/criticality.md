@@ -1,37 +1,53 @@
 # criticality
 
-**Total functions:** 13 (12 public, 1 private)
+## Overview
 
-## Public Functions
+Criticality Signatures — 1/f, DFA, Avalanches vs Conscious Mode (fs=128)
 
-### `bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order: int) -> np.ndarray`
+**Module Statistics:**
+- Total Functions: 13
+- Public Functions: 12
+- Private Functions: 1
 
-### `slice_blocks(RECORDS: pd.DataFrame, time_col: str, X: np.ndarray, fs: float, winlist: List[Tuple[float, float]]) -> List[np.ndarray]`
+## Main Analysis
 
-### `find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Series]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_criticality_analysis` | `(RECORDS, ignition_windows, ...)` | *No description* |
+| `analyze_state` | `(blocks)` | *No description* |
 
-### `welch_beta(x: np.ndarray, fs: float, fmin: float, fmax: float) -> float`
-> Robust 1/f slope β via log–log linear regression on Welch PSD between fmin–fmax.
+## Plotting
 
-### `dfa_alpha(x: np.ndarray, fs: float, scales_sec: np.ndarray) -> float`
-> Detrended fluctuation analysis (DFA) exponent α on band-limited amplitude envelope.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_criticality_deltas` | `(delta_df)` | *No description* |
+| `plot_avalanche_ccdf` | `(aval_dict)` | Plot complementary CDFs of avalanche sizes/durations per state (log–log). |
 
-### `avalanche_events(env: np.ndarray, thresh: float) -> List[Tuple[int, int, float]]`
-> Return [(start_idx, end_idx, size)] where size is area under envelope above threshold.
+## Detection
 
-### `avalanche_stats(envs: List[np.ndarray], fs: float, thresh_mode: str) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `find_channel_series` | `(records, ch_name)` | *No description* |
 
-### `run_criticality_analysis(RECORDS: pd.DataFrame, ignition_windows: List[Tuple[float, float]], rebound_windows: Optional[List[Tuple[float, float]]], control_windows: Optional[List[Tuple[float, float]]], electrodes: Optional[List[str]], ...) -> Dict[str, object]`
+## Data Processing
 
-### `analyze_state(blocks: List[np.ndarray]) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
+| `slice_blocks` | `(RECORDS, time_col, X, fs, winlist)` | *No description* |
 
-### `plot_criticality_deltas(delta_df: pd.DataFrame) -> None`
+## Utilities
 
-### `plot_avalanche_ccdf(aval_dict: Dict[str, Dict[str, np.ndarray]]) -> None`
-> Plot complementary CDFs of avalanche sizes/durations per state (log–log).
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `welch_beta` | `(x, fs, fmin=1.0, fmax=40.0)` | Robust 1/f slope β via log–log linear regression on Welch PSD between fmin–fmax. |
+| `dfa_alpha` | `(x, fs, scales_sec)` | Detrended fluctuation analysis (DFA) exponent α on band-limited amplitude env... |
+| `avalanche_events` | `(env, thresh)` | Return [(start_idx, end_idx, size)] where size is area under envelope above t... |
+| `avalanche_stats` | `(envs, fs, thresh_mode='p95')` | *No description* |
+| `fit_powerlaw_tail` | `(x, xmin=None)` | *No description* |
 
-### `fit_powerlaw_tail(x, xmin)`
+## Private Helpers
 
-## Private/Helper Functions
-
-- `_get_fs(RECORDS: pd.DataFrame, time_col: str)`
+| Function | Description |
+|----------|-------------|
+| `_get_fs` | *Helper function* |

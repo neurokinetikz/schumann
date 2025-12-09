@@ -1,19 +1,38 @@
 # temporal_holography
 
-**Total functions:** 8 (3 public, 5 private)
+## Overview
 
-## Public Functions
+Temporal Holography — Multiplexed References (fs=128)
 
-### `find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Series]`
+**Module Statistics:**
+- Total Functions: 8
+- Public Functions: 3
+- Private Functions: 5
 
-### `run_temporal_holography_multiplexed(RECORDS: pd.DataFrame, event_onsets: List[float], labels: Optional[List], time_col: str, electrodes: Optional[List[str]], ...) -> Dict[str, object]`
+## Main Analysis
 
-### `trial_segment(on)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_temporal_holography_multiplexed` | `(RECORDS, event_onsets, labels=None, ...)` | *No description* |
 
-## Private/Helper Functions
+## Detection
 
-- `_get_fs(RECORDS: pd.DataFrame, time_col: str)`
-- `_bandpass(x: np.ndarray, fs: float, f1: float, ...)`
-- `_get_series_matrix(RECORDS, electrodes, time_col)`
-- `_phase_at_time(ref_sig: np.ndarray, tvec: np.ndarray, fs: float, ...)`
-- `_pac_mi_single(x_phase: np.ndarray, x_amp: np.ndarray, nbins: int)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `find_channel_series` | `(records, ch_name)` | *No description* |
+
+## Utilities
+
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `trial_segment` | `(on)` | *No description* |
+
+## Private Helpers
+
+| Function | Description |
+|----------|-------------|
+| `_get_fs` | *Helper function* |
+| `_bandpass` | *Helper function* |
+| `_get_series_matrix` | *Helper function* |
+| `_phase_at_time` | *Helper function* |
+| `_pac_mi_single` | *Helper function* |

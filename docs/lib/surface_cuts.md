@@ -1,27 +1,48 @@
 # surface_cuts
 
-**Total functions:** 13 (5 public, 8 private)
+## Overview
 
-## Public Functions
+RT-Style Multi-Seed Surfaces — Multiway Cuts Across Subsystems (fs=128)
 
-### `find_channel_series(records: pd.DataFrame, ch_name: str) -> Optional[pd.Series]`
+**Module Statistics:**
+- Total Functions: 13
+- Public Functions: 5
+- Private Functions: 8
 
-### `default_clusters(electrodes: List[str]) -> Dict[str, List[int]]`
-> Map label-> indices into electrodes list for broad subsystems F, P, O, T.
+## Main Analysis
 
-### `run_multi_seed_surface_cuts(RECORDS: pd.DataFrame, ignition_windows: List[Tuple[float, float]], rebound_windows: Optional[List[Tuple[float, float]]], time_col: str, bands: Optional[Dict[str, Tuple[float, float]]], ...) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_multi_seed_surface_cuts` | `(RECORDS, ignition_windows, ...)` | *No description* |
 
-### `adj_for_windows(windows: List[Tuple[float, float]], f1: float, f2: float) -> np.ndarray`
+## Plotting
 
-### `plot_multicut_deltas(df: pd.DataFrame, shuffle: Optional[pd.DataFrame]) -> None`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_multicut_deltas` | `(df, shuffle)` | *No description* |
 
-## Private/Helper Functions
+## Detection
 
-- `_get_fs(RECORDS: pd.DataFrame, time_col: str)`
-- `_autoelectrodes(RECORDS: pd.DataFrame, time_col: str)`
-- `_bandpass(X: np.ndarray, fs: float, f1: float, ...)`
-- `_pseudo_wpli(Xb: np.ndarray)`
-- `_set_set_mincut_capacity(GH: nx.Graph, A: List[int], B: List[int])`
-- `_multi_seed_capacity(A: np.ndarray, clusters_idx: Dict[str, List[int]])`
-- `_weight_permute_surrogate(A: np.ndarray, rng: np.random.Generator)`
-- `_degree_rewire_surrogate(A: np.ndarray, density: float, rng: np.random.Generator, ...)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `find_channel_series` | `(records, ch_name)` | *No description* |
+
+## Utilities
+
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `default_clusters` | `(electrodes)` | Map label-> indices into electrodes list for broad subsystems F, P, O, T. |
+| `adj_for_windows` | `(windows, f1, f2)` | *No description* |
+
+## Private Helpers
+
+| Function | Description |
+|----------|-------------|
+| `_get_fs` | *Helper function* |
+| `_autoelectrodes` | *Helper function* |
+| `_bandpass` | *Helper function* |
+| `_pseudo_wpli` | *Helper function* |
+| `_set_set_mincut_capacity` | Given a Gomory–Hu tree GH (capacities on edges), compute min... |
+| `_multi_seed_capacity` | Build graph → GH tree → sum of pairwise set–set mincut capac... |
+| `_weight_permute_surrogate` | *Helper function* |
+| `_degree_rewire_surrogate` | Threshold to given density; rewire with double_edge_swap; re... |

@@ -1,197 +1,158 @@
 # test
 
-**Total functions:** 128 (53 public, 75 private)
+## Overview
 
-## Public Functions
+Test utilities and experimental functions.
 
-### `p2_min_dur(self) -> float`
+**Module Statistics:**
+- Total Functions: 128
+- Public Functions: 53
+- Private Functions: 75
 
-### `slice(self, t0: float, t1: float) -> 'BaseProvider'`
+## Plotting
 
-### `t(self) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_ignition_window_report` | `(_records, provider, electrodes)` | *No description* |
 
-### `z_fund(self) -> np.ndarray`
+## Computation
 
-### `z_h2(self) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `compute_session_spectrogram` | `(_records)` | Return a robust session spectrogram as (t_spec_abs, f_spec, Sxx_med). |
+| `build_ignition_feature_pack` | `(_records, windows)` | *No description* |
+| `estimate_sr_peaks` | `(records, fs, ign_win, ...)` | Get a simple list of estimated SR harmonic frequencies from ignition window E... |
 
-### `z_h3(self) -> np.ndarray`
+## Utilities
 
-### `plv_fund(self) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `p2_min_dur` | `()` | *No description* |
+| `slice` | `(t0, t1)` | *No description* |
+| `t` | `()` | *No description* |
+| `z_fund` | `()` | *No description* |
+| `z_h2` | `()` | *No description* |
+| `z_h3` | `()` | *No description* |
+| `plv_fund` | `()` | *No description* |
+| `hsi` | `()` | *No description* |
+| `beta` | `()` | *No description* |
+| `ridge_is_fund` | `()` | *No description* |
+| `bic_7_7_15` | `()` | *No description* |
+| `bic_7_15_23` | `()` | *No description* |
+| `pac_mvl` | `()` | *No description* |
+| `spectrogram` | `()` | *No description* |
+| `slice` | `(t0, t1)` | *No description* |
+| `t` | `()` | *No description* |
+| `z_fund` | `()` | *No description* |
+| `z_h2` | `()` | *No description* |
+| `z_h3` | `()` | *No description* |
+| `plv_fund` | `()` | *No description* |
+| `hsi` | `()` | *No description* |
+| `beta` | `()` | *No description* |
+| `ridge_is_fund` | `()` | *No description* |
+| `bic_7_7_15` | `()` | *No description* |
+| `bic_7_15_23` | `()` | *No description* |
+| `pac_mvl` | `()` | *No description* |
+| `spectrogram` | `()` | *No description* |
+| `spectrogram_for_window` | `(t0, t1)` | *No description* |
+| `window_spec_median` | `(records, window)` | Robust spectrogram inside `window`: |
+| `patch_pack_with_hsi_v3_for_windows` | `(pack, records, windows)` | Compute a per-window spectrogram from time-domain median, derive HSI_v3, |
+| `repl` | `(match)` | *No description* |
+| `hsi_from_spec_v2` | `(spec, ladder=..., win_half_hz=0.6, ...)` | spec = (tS, fS, S) with S shape (F,T), linear power. |
+| `hsi_v3_from_window_spec` | `(tW, fW, SW)` | HSI_v3(t): lower = tighter harmonics. |
+| `sanity` | `(pack)` | *No description* |
+| `piano_roll_from_spec` | `(spec_by_window)` | spec_by_window: (tW, fW, SW) from your per-window spectrogram |
+| `bandtrace_from_spec` | `(tW, fW, SW, f0, bw=0.8)` | *No description* |
+| `z_norm` | `(y)` | *No description* |
+| `z_for_display` | `(t, y)` | *No description* |
+| `z_for_display` | `(t_vec, y_vec, s=0.45)` | *No description* |
+| `to_abs` | `(ts, ys)` | *No description* |
+| `interp_to_raw` | `(t_src, y_src)` | *No description* |
+| `robust_z` | `(x)` | *No description* |
+| `smooth_sec` | `(t, y, sec=0.15)` | *No description* |
+| `annotate_phases` | `(ax, phases, ymin, ymax)` | Annotate phases on plot. Supports both old 5-phase (P0-P4) and new 6-phase mo... |
+| `six_panel` | `(records, electrodes, ign_win, ...)` | *No description* |
+| `six_panel_2` | `(records, electrodes, ign_win, ...)` | *No description* |
+| `sr_signature_panel` | `(records, electrodes, ign_win, ...)` | *No description* |
+| `ignition_signature_panel` | `(records, electrodes, ign_win, ...)` | *No description* |
+| `six_panel_3` | `(records, electrodes, ign_win, ...)` | *No description* |
 
-### `hsi(self) -> np.ndarray`
+## Private Helpers
 
-### `beta(self) -> Optional[np.ndarray]`
-
-### `ridge_is_fund(self) -> Optional[np.ndarray]`
-
-### `bic_7_7_15(self) -> Optional[np.ndarray]`
-
-### `bic_7_15_23(self) -> Optional[np.ndarray]`
-
-### `pac_mvl(self) -> Optional[np.ndarray]`
-
-### `spectrogram(self) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]`
-
-### `slice(self, t0: float, t1: float) -> 'PackProvider'`
-
-### `t(self)`
-
-### `z_fund(self)`
-
-### `z_h2(self)`
-
-### `z_h3(self)`
-
-### `plv_fund(self)`
-
-### `hsi(self)`
-
-### `beta(self)`
-
-### `ridge_is_fund(self)`
-
-### `bic_7_7_15(self)`
-
-### `bic_7_15_23(self)`
-
-### `pac_mvl(self)`
-
-### `spectrogram(self)`
-
-### `spectrogram_for_window(self, t0, t1)`
-
-### `window_spec_median(records, window)`
-> Robust spectrogram inside `window`:
-
-### `patch_pack_with_hsi_v3_for_windows(pack, records, windows)`
-> Compute a per-window spectrogram from time-domain median, derive HSI_v3,
-
-### `repl(match)`
-
-### `hsi_from_spec_v2(spec, ladder, win_half_hz, smooth_hz)`
-> spec = (tS, fS, S) with S shape (F,T), linear power.
-
-### `hsi_v3_from_window_spec(tW, fW, SW)`
-> HSI_v3(t): lower = tighter harmonics.
-
-### `sanity(pack)`
-
-### `piano_roll_from_spec(spec_by_window)`
-> spec_by_window: (tW, fW, SW) from your per-window spectrogram
-
-### `bandtrace_from_spec(tW, fW, SW, f0, bw)`
-
-### `plot_ignition_window_report(_records, provider, electrodes)`
-
-### `z_norm(y)`
-
-### `z_for_display(t, y)`
-
-### `z_for_display(t_vec, y_vec, s)`
-
-### `compute_session_spectrogram(_records)`
-> Return a robust session spectrogram as (t_spec_abs, f_spec, Sxx_med).
-
-### `build_ignition_feature_pack(_records: pd.DataFrame, windows: List[Tuple[float, float]]) -> Dict[str, np.ndarray]`
-
-### `to_abs(ts, ys)`
-
-### `interp_to_raw(t_src, y_src)`
-
-### `robust_z(x)`
-
-### `smooth_sec(t, y, sec)`
-
-### `annotate_phases(ax, phases: Dict[str, Any], ymin: float, ymax: float) -> None`
-> Annotate phases on plot. Supports both old 5-phase (P0-P4) and new 6-phase models.
-
-### `six_panel(records, electrodes, ign_win, ign_out, ladder, ...)`
-
-### `estimate_sr_peaks(records, fs, ign_win, session_harmonics, search_band)`
-> Get a simple list of estimated SR harmonic frequencies from ignition window EEG (all channels).
-
-### `six_panel_2(records, electrodes, ign_win, ign_out, ladder, ...)`
-
-### `sr_signature_panel(records, electrodes, ign_win, ign_out, ladder, ...)`
-
-### `ignition_signature_panel(records, electrodes, ign_win, ign_out, ladder, ...)`
-
-### `six_panel_3(records, electrodes, ign_win, ign_out, ladder, ...)`
-
-## Private/Helper Functions
-
-- `_resolve_palette(name: str)`
-- `__init__(self, pack: Dict[str, Any], sl: slice)`
-- `_get(self, k: str, default)`
-- `_get_any(self)`
-- `_slice_spec_to_window(spec, window, min_cols)`
-- `_spec_db_rowz(SW)`
-- `_as_float_1d(x)`
-- `_normalize_channel_label(label: Optional[str])`
-- `_resolve_seed_channel_index(seed_ch: Optional[str], electrodes: Sequence[str])`
-- `_match_ignition_event_row(ign_out: Any, ign_win: Tuple[float, float])`
-- `_format_numeric_labels(labels: Sequence[str], decimals: int)`
-- `_extract_seed_channel(ign_out: Any, ign_win: Tuple[float, float])`
-- `_bp_hilbert_env_z(X, fs, f0, ...)`
-- `_plv_7p8(X, fs, f0, ...)`
-- `_spec_median(X, fs, band, ...)`
-- `_hsi_from_spec(tS, fS, S, ...)`
-- `_first_onset(mask: np.ndarray, t: np.ndarray, min_dur: float)`
-- `_collect_runs(mask: np.ndarray, t: np.ndarray, min_dur: float, ...)`
-- `_band_mask(t: np.ndarray, lo: float, hi: float)`
-- `_clip_seed_to_window(seed_t: float | None, t0: float, t1: float, ...)`
-- `_robust_z(y: np.ndarray)`
-- `_winsor_robust_z(y: np.ndarray, p_lo: float, p_hi: float)`
-- `_rising_over_tau(y: np.ndarray, t: np.ndarray, tau_s: float, ...)`
-- `_bridge(mask: np.ndarray, t: np.ndarray, bridge_sec: float)`
-- `_spectral_slope_series(t_spec: np.ndarray, f_spec: np.ndarray, Sxx: np.ndarray, ...)`
-- `_avalanche_size_duration(signal: np.ndarray, t: np.ndarray, thresh: float, ...)`
-- `_kuramoto_order_series(X: np.ndarray, fs: float, center_hz: float, ...)`
-- `_msc_channel_to_reference(ch_signal: np.ndarray, ref_signal: np.ndarray)`
-- `_msc_matrix(X: np.ndarray, fs: float, freqs: Sequence[float], ...)`
-- `_plv_matrix(X: np.ndarray, fs: float, f0: float, ...)`
-- `_mode_metrics(power: np.ndarray)`
-- `_interp_safe(x_new: np.ndarray, xp: np.ndarray, fp: np.ndarray)`
-- `_te_matrix(X: np.ndarray, fs: float, lead_sec: float)`
-- `_transfer_entropy_proxy(theta_env: np.ndarray, gamma_env: np.ndarray, fs: float, ...)`
-- `_sample_entropy(signal: np.ndarray, m: int, r: float)`
-- `_phi(mm: int)`
-- `_complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, ...)`
-- `_hurst_exponent(signal: np.ndarray, scales: Sequence[int])`
-- `_lempel_ziv_complexity(signal: np.ndarray)`
-- `_lz_complexity_series(signal: np.ndarray, t: np.ndarray, win_sec: float, ...)`
-- `_baseline_slice(records: pd.DataFrame, time_col: str, window: Tuple[float, float], ...)`
-- `_infer_fs(df: pd.DataFrame, time_col: str)`
-- `_looks_like_eeg_col(name: str)`
-- `_auto_channels(df: pd.DataFrame, time_col: str)`
-- `_get_matrix(df: pd.DataFrame, channels: Sequence[str])`
-- `_fir_bandpass(f0: float, bw: float, fs: float, ...)`
-- `_fir_lowpass(fc: float, fs: float, numtaps: int)`
-- `_sliding_windows(n: int, fs: float, win_sec: float, ...)`
-- `_plv_across_channels(phases: np.ndarray)`
-- `_plv_timecourse(X: np.ndarray, fs: float, f0: float, ...)`
-- `_msc_timecourse(X: np.ndarray, fs: float, f0: float, ...)`
-- `_narrowband_envelope_z(X, fs, f0, ...)`
-- `_hsi_timecourse(X, fs, win_sec, ...)`
-- `_pac_tort_mi_timecourse(X, fs, theta_band, ...)`
-- `_pac_mvl_timecourse(X, fs)`
-- `_bicoherence_triads_timecourse(X, fs, triads, ...)`
-- `_detect_ignition_phases(t: np.ndarray, z_fund: np.ndarray, plv_fund: np.ndarray, ...)`
-- `_np_percentile(arr: np.ndarray, p: float, default: float)`
-- `_robust_z(arr: np.ndarray, idx: Optional[int])`
-- `_sigmoid(x: float)`
-- `_first_run(mask: np.ndarray, min_sec: float, start_idx: int)`
-- `_gauss_smooth(y: np.ndarray, sigma_sec: float)`
-- `_snap_event(ev: Dict[str, Any])`
-- `_detect_six_phase_evolution(t: np.ndarray, z_fund: np.ndarray, plv_fund: np.ndarray, ...)`
-- `_smooth(y: np.ndarray, sigma_sec: float)`
-- `_find_phase_boundary(start_idx: int, direction: int, criterion_fn, ...)`
-- `_sigmoid(x: float)`
-- `_phase_confidence(start_idx: int, end_idx: int, criteria: dict)`
-- `_time_to_idx(time: float)`
-- `_annotate_six_phases(ax, phases: Dict[str, Any], ymin: float, ...)`
-- `_annotate_five_phases_legacy(ax, phases: Dict[str, Any], ymin: float, ...)`
-- `_get_event(name: str)`
-- `_safe_envelope(center_hz: float)`
-- `_to_z(env)`
-- `_apply_sunrise_style(ax)`
+| Function | Description |
+|----------|-------------|
+| `_resolve_palette` | *Helper function* |
+| `__init__` | *Helper function* |
+| `_get` | *Helper function* |
+| `_get_any` | *Helper function* |
+| `_slice_spec_to_window` | Return (tW, fW, SW) for the window. If the mask is too small... |
+| `_spec_db_rowz` | 10*log10 then row-wise robust z (median/MAD). |
+| `_as_float_1d` | *Helper function* |
+| `_normalize_channel_label` | *Helper function* |
+| `_resolve_seed_channel_index` | *Helper function* |
+| `_match_ignition_event_row` | *Helper function* |
+| `_format_numeric_labels` | *Helper function* |
+| `_extract_seed_channel` | *Helper function* |
+| `_bp_hilbert_env_z` | *Helper function* |
+| `_plv_7p8` | *Helper function* |
+| `_spec_median` | *Helper function* |
+| `_hsi_from_spec` | *Helper function* |
+| `_first_onset` | *Helper function* |
+| `_collect_runs` | *Helper function* |
+| `_band_mask` | *Helper function* |
+| `_clip_seed_to_window` | *Helper function* |
+| `_robust_z` | *Helper function* |
+| `_winsor_robust_z` | Winsorized robust‑z (MAD∨IQR) to avoid explosive scales in q... |
+| `_rising_over_tau` | *Helper function* |
+| `_bridge` | Bridge short False gaps (morphological closing) to avoid mic... |
+| `_spectral_slope_series` | *Helper function* |
+| `_avalanche_size_duration` | *Helper function* |
+| `_kuramoto_order_series` | *Helper function* |
+| `_msc_channel_to_reference` | *Helper function* |
+| `_msc_matrix` | *Helper function* |
+| `_plv_matrix` | *Helper function* |
+| `_mode_metrics` | *Helper function* |
+| `_interp_safe` | *Helper function* |
+| `_te_matrix` | *Helper function* |
+| `_transfer_entropy_proxy` | *Helper function* |
+| `_sample_entropy` | *Helper function* |
+| `_phi` | *Helper function* |
+| `_complexity_series` | *Helper function* |
+| `_hurst_exponent` | *Helper function* |
+| `_lempel_ziv_complexity` | *Helper function* |
+| `_lz_complexity_series` | *Helper function* |
+| `_baseline_slice` | *Helper function* |
+| `_infer_fs` | *Helper function* |
+| `_looks_like_eeg_col` | *Helper function* |
+| `_auto_channels` | *Helper function* |
+| `_get_matrix` | *Helper function* |
+| `_fir_bandpass` | *Helper function* |
+| `_fir_lowpass` | *Helper function* |
+| `_sliding_windows` | *Helper function* |
+| `_plv_across_channels` | PLV across channels for one time point given phase per-chann... |
+| `_plv_timecourse` | Correct: compute channel resultant \|mean(exp(i*phi_ch(t)))\| ... |
+| `_msc_timecourse` | Sliding magnitude-squared coherence between the broadband ch... |
+| `_narrowband_envelope_z` | *Helper function* |
+| `_hsi_timecourse` | *Helper function* |
+| `_pac_tort_mi_timecourse` | *Helper function* |
+| `_pac_mvl_timecourse` | *Helper function* |
+| `_bicoherence_triads_timecourse` | *Helper function* |
+| `_detect_ignition_phases` | Phase-aware ignition detector returning P0-P3 events and con... |
+| `_np_percentile` | *Helper function* |
+| `_robust_z` | *Helper function* |
+| `_sigmoid` | *Helper function* |
+| `_first_run` | Return the first contiguous run of `True` values long enough... |
+| `_gauss_smooth` | *Helper function* |
+| `_snap_event` | *Helper function* |
+| `_detect_six_phase_evolution` | Six-phase temporal evolution detection for SR ignitions. |
+| `_smooth` | *Helper function* |
+| `_find_phase_boundary` | Find phase boundary by searching in direction until criterio... |
+| `_sigmoid` | *Helper function* |
+| `_phase_confidence` | Compute confidence based on signal characteristics in phase. |
+| `_time_to_idx` | *Helper function* |
+| `_annotate_six_phases` | Annotate six-phase temporal evolution model. |
+| `_annotate_five_phases_legacy` | Legacy five-phase annotation (P0-P4). |
+| `_get_event` | *Helper function* |
+| `_safe_envelope` | *Helper function* |
+| `_to_z` | *Helper function* |
+| `_apply_sunrise_style` | *Helper function* |

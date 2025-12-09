@@ -1,55 +1,59 @@
 # attractor_topology
 
-**Total functions:** 19 (18 public, 1 private)
+## Overview
 
-## Public Functions
+Attractor Topology via Nonlinear Dimensional Embedding — Simple Graphs & Validity Tests
 
-### `infer_fs(RECORDS: pd.DataFrame, time_col: str) -> float`
+**Module Statistics:**
+- Total Functions: 19
+- Public Functions: 18
+- Private Functions: 1
 
-### `get_series(RECORDS: pd.DataFrame, name: str) -> np.ndarray`
+## Main Analysis
 
-### `slice_concat(x: np.ndarray, fs: float, windows: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_attractor_topology` | `(RECORDS, eeg_channels, ...)` | Build attractor embeddings and tests for Ignition and Baseline. |
 
-### `zscore(x)`
+## Computation
 
-### `detect_time_col(RECORDS: pd.DataFrame, candidates) -> str | None`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `estimate_delay_tau` | `(x, fs, max_lag_sec=2.0, method='acf-1e')` | Pick τ from the first time where autocorrelation falls below 1/e (default) or... |
 
-### `ensure_timestamp_column(RECORDS: pd.DataFrame, time_col: str | None, default_fs: float, out_name: str) -> str`
-> Ensure RECORDS[out_name] exists as numeric seconds (t=0 at first sample).
+## Detection
 
-### `estimate_delay_tau(x: np.ndarray, fs: float, max_lag_sec: float, method: str) -> int`
-> Pick τ from the first time where autocorrelation falls below 1/e (default) or crosses 0.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(RECORDS, candidates=...)` | *No description* |
 
-### `takens_embedding(x: np.ndarray, m: int, tau: int) -> np.ndarray`
-> Return (N_eff, m) embedded matrix: [x_t, x_{t+τ}, ..., x_{t+(m-1)τ}]
+## Data Processing
 
-### `false_nearest_neighbors(x: np.ndarray, tau: int, m_list: List[int], theiler: int) -> pd.DataFrame`
-> Simple FNN percentage vs m. If sklearn is present, uses KDTree; else brute force sample.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, windows)` | *No description* |
 
-### `correlation_dimension_gp(X: np.ndarray, r_min_quant: float, r_max_quant: float, n_r: int, max_pairs: int) -> Dict[str, object]`
-> Grassberger-Procaccia correlation sum C(r) and slope (D2) over a mid-range.
+## Utilities
 
-### `lyapunov_rosenstein(x: np.ndarray, m: int, tau: int, fs: float, theiler: int, ...) -> Dict[str, object]`
-> Largest Lyapunov exponent (Rosenstein et al.).
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `infer_fs` | `(RECORDS, time_col='Timestamp')` | *No description* |
+| `get_series` | `(RECORDS, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `ensure_timestamp_column` | `(RECORDS, time_col=None, ...)` | Ensure RECORDS[out_name] exists as numeric seconds (t=0 at first sample). |
+| `takens_embedding` | `(x, m, tau)` | Return (N_eff, m) embedded matrix: [x_t, x_{t+τ}, ..., x_{t+(m-1)τ}] |
+| `false_nearest_neighbors` | `(x, tau, m_list, theiler=10)` | Simple FNN percentage vs m. If sklearn is present, uses KDTree; else brute fo... |
+| `correlation_dimension_gp` | `(X, r_min_quant=0.05, ...)` | Grassberger-Procaccia correlation sum C(r) and slope (D2) over a mid-range. |
+| `lyapunov_rosenstein` | `(x, m, tau, fs, theiler=10, t_fit=(1, 30))` | Largest Lyapunov exponent (Rosenstein et al.). |
+| `recurrence_plot` | `(X, eps_quant=0.1)` | Binary RP thresholded at eps = quantile(eps_quant) of distances. |
+| `persistent_homology_summary` | `(X, maxdim=2)` | If ripser is installed, compute persistence and return diagrams + simple counts. |
+| `count_persistent` | `(dgm, thr=0.02)` | *No description* |
+| `phase_randomize` | `(x)` | *No description* |
+| `time_shuffle` | `(x)` | *No description* |
+| `metric_vs_surrogates` | `(metric_func, x, n_surr=100, kind='phase')` | Compute metric on x, build null from surrogates (phase or shuffle). Return (v... |
 
-### `recurrence_plot(X: np.ndarray, eps_quant: float) -> Dict[str, object]`
-> Binary RP thresholded at eps = quantile(eps_quant) of distances.
+## Private Helpers
 
-### `persistent_homology_summary(X: np.ndarray, maxdim: int) -> Dict[str, object]`
-> If ripser is installed, compute persistence and return diagrams + simple counts.
-
-### `count_persistent(dgm, thr)`
-
-### `phase_randomize(x: np.ndarray) -> np.ndarray`
-
-### `time_shuffle(x: np.ndarray) -> np.ndarray`
-
-### `metric_vs_surrogates(metric_func, x: np.ndarray, n_surr: int, kind: str) -> Tuple[float, float]`
-> Compute metric on x, build null from surrogates (phase or shuffle). Return (value, p-value).
-
-### `run_attractor_topology(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], time_col: str, ...) -> Dict[str, object]`
-> Build attractor embeddings and tests for Ignition and Baseline.
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

@@ -1,43 +1,54 @@
 # psd_waterfall
 
-**Total functions:** 24 (9 public, 15 private)
+## Overview
 
-## Public Functions
+Across‑Session Ignition PSD Collector & Grand Waterfall
 
-### `compute_psd_by_window_df(df: pd.DataFrame, windows: Sequence[Tuple[float, float]], fs: float, channels: Optional[Sequence[str]], band: Optional[Tuple[float, float]], ...) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]`
+**Module Statistics:**
+- Total Functions: 24
+- Public Functions: 9
+- Private Functions: 15
 
-### `add_session(self, RECORDS: pd.DataFrame, windows: Sequence[Tuple[float, float]], fs: float, session_id: str, ...) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]`
+## Plotting
 
-### `add_precomputed(self, freqs: np.ndarray, Z: np.ndarray, session_id: str, windows: Optional[Sequence[Tuple[float, float]]], ...) -> None`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_heatmap` | `(title=None, cmap='turbo', ...)` | *No description* |
+| `plot_grand_waterfall` | `(title=None, cmap='turbo', ...)` | *No description* |
+| `plot_waterfall_sr` | `(freqs, Z, meta, title=None, ...)` | *No description* |
+| `plot_ignition_psd_waterfall` | `(csv_or_df, windows, fs, ...)` | Backward-compatible function that accepts a DataFrame **or** CSV path. |
 
-### `freqs(self) -> np.ndarray`
+## Computation
 
-### `to_dataframe(self) -> pd.DataFrame`
-> Return a tidy DataFrame with columns: row_id, freq, value, plus metadata.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `compute_psd_by_window_df` | `(df, windows, fs, channels=None, ...)` | *No description* |
 
-### `plot_heatmap(self, title: Optional[str], cmap: str, annotate: bool, vmin: Optional[float], ...) -> Tuple[plt.Figure, Dict[str, Any]]`
+## Utilities
 
-### `plot_grand_waterfall(self, title: Optional[str], cmap: str, view_preset: str, heatmap_panel: bool, ...) -> Tuple[plt.Figure, np.ndarray, np.ndarray, Dict[str, Any]]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `add_session` | `(RECORDS, windows, fs, session_id, ...)` | *No description* |
+| `add_precomputed` | `(freqs, Z, session_id, windows=None, ...)` | *No description* |
+| `freqs` | `()` | *No description* |
+| `to_dataframe` | `()` | Return a tidy DataFrame with columns: row_id, freq, value, plus metadata. |
 
-### `plot_waterfall_sr(freqs: np.ndarray, Z: np.ndarray, meta: Dict[str, Any], title: Optional[str], cmap: str, ...) -> Tuple[plt.Figure, Dict]`
+## Private Helpers
 
-### `plot_ignition_psd_waterfall(csv_or_df: Union[str, pd.DataFrame], windows: Sequence[Tuple[float, float]], fs: float, channels: Optional[Sequence[str]], band: Optional[Tuple[float, float]], ...) -> Tuple[plt.Figure, np.ndarray, np.ndarray, Dict]`
-> Backward-compatible function that accepts a DataFrame **or** CSV path.
-
-## Private/Helper Functions
-
-- `_guess_time_col(df: pd.DataFrame)`
-- `_auto_channels(df: pd.DataFrame)`
-- `_sec_to_idx(df: pd.DataFrame, s: float, e: float, ...)`
-- `_bandpass_notch(X: np.ndarray, fs: float, band: Optional[Tuple[float, float]], ...)`
-- `_welch_psd(X: np.ndarray, fs: float, nperseg_sec, ...)`
-- `_aggregate_psd(P: np.ndarray, mode)`
-- `__init__(self, freq_range: Tuple[float, float], sort_by: Optional[Union[str, Tuple[str, float]]], ...)`
-- `_row_df(self)`
-- `_sort_indices(self)`
-- `_add_sr_lines_2d(self, ax)`
-- `_sr_markers_2d(self, ax, Z_sorted)`
-- `_resolve_view(view_preset: Optional[str], elev: Optional[float], azim: Optional[float])`
-- `_add_sr_curtains(ax, freqs: np.ndarray, N: int, ...)`
-- `_add_sr_markers(ax, freqs: np.ndarray, Z: np.ndarray, ...)`
-- `_plot_waterfall_any(freqs: np.ndarray, Z: np.ndarray, title: Optional[str], ...)`
+| Function | Description |
+|----------|-------------|
+| `_guess_time_col` | *Helper function* |
+| `_auto_channels` | *Helper function* |
+| `_sec_to_idx` | *Helper function* |
+| `_bandpass_notch` | *Helper function* |
+| `_welch_psd` | *Helper function* |
+| `_aggregate_psd` | *Helper function* |
+| `__init__` | sort_by: None \| 'session' \| 'duration' \| 'max' \| ('sr', f0) |
+| `_row_df` | *Helper function* |
+| `_sort_indices` | *Helper function* |
+| `_add_sr_lines_2d` | *Helper function* |
+| `_sr_markers_2d` | *Helper function* |
+| `_resolve_view` | *Helper function* |
+| `_add_sr_curtains` | *Helper function* |
+| `_add_sr_markers` | *Helper function* |
+| `_plot_waterfall_any` | *Helper function* |

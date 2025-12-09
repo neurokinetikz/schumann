@@ -1,35 +1,48 @@
 # schumann_coherence
 
-**Total functions:** 13 (12 public, 1 private)
+## Overview
 
-## Public Functions
+EEG–Schumann Coherence Testing — Simple Graphs & Validation
 
-### `infer_fs(df: pd.DataFrame, time_col) -> float`
+**Module Statistics:**
+- Total Functions: 13
+- Public Functions: 12
+- Private Functions: 1
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Main Analysis
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]])`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_eeg_schumann_coherence` | `(RECORDS, eeg_channels, sr_channel, ...)` | *No description* |
 
-### `bandpass(x, fs, f1, f2, order)`
+## Computation
 
-### `msc_harmonics_table(df, eeg_channels, sr_channel, wins, time_col, ...) -> pd.DataFrame`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `compute_coherence_at_f0` | `(xe, xs, fs, f0, half)` | Magnitude-squared coherence between signals xe and xs at target frequency f0. |
+| `build_null_threshold` | `(coh, n_null=200, method='block', ...)` | Estimate a null threshold for a sliding coherence trace by resampling the |
 
-### `wavelet_coherence_tf(df, x_name, y_name, time_col, fmin, ...) -> Dict[str, object]`
+## Data Processing
 
-### `cwt_linear(sig: np.ndarray) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `smooth(A: np.ndarray, wlen: int) -> np.ndarray`
+## Utilities
 
-### `sliding_coherence_f0(df, eeg_channel, sr_channel, ignition_windows, f0, ...)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `infer_fs` | `(df, time_col='Timestamp')` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `msc_harmonics_table` | `(df, eeg_channels, sr_channel, wins, ...)` | *No description* |
+| `wavelet_coherence_tf` | `(df, x_name, y_name, ...)` | *No description* |
+| `cwt_linear` | `(sig)` | *No description* |
+| `smooth` | `(A, wlen=9)` | *No description* |
+| `sliding_coherence_f0` | `(df, eeg_channel, sr_channel, ...)` | *No description* |
 
-### `compute_coherence_at_f0(xe, xs, fs, f0, half)`
-> Magnitude-squared coherence between signals xe and xs at target frequency f0.
+## Private Helpers
 
-### `build_null_threshold(coh, n_null, method, block_len, alpha, ...)`
-> Estimate a null threshold for a sliding coherence trace by resampling the
-
-### `run_eeg_schumann_coherence(RECORDS: pd.DataFrame, eeg_channels: List[str], sr_channel: str, ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], ...) -> Dict[str, object]`
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

@@ -1,42 +1,55 @@
 # multiscale_entropy_and_fractal_scaling
 
-**Total functions:** 15 (14 public, 1 private)
+## Overview
 
-## Public Functions
+Multi-Scale Entropy (MSE) & Fractal Scaling (DFA) — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 15
+- Public Functions: 14
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name: str) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_mse_dfa_multiscale` | `(RECORDS, eeg_channels, ...)` | MSE + DFA with surrogate validation, for ignition and baseline windows. |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Computation
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `build_drive` | `(wins)` | *No description* |
 
-### `zscore(x)`
+## Detection
 
-### `coarse_grain(x: np.ndarray, scale: int) -> np.ndarray`
-> Non-overlapping average; drops remainder.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `sampen(x: np.ndarray, m: int, r_ratio: float) -> float`
-> Sample Entropy (m,r) with Chebyshev metric.
+## Data Processing
 
-### `count_matches(X, tol)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
 
-### `mse_curve(x: np.ndarray, fs: float, max_scale_sec: float, m: int, r_ratio: float, ...) -> Tuple[np.ndarray, np.ndarray]`
-> Compute MSE over integer coarse-grain scales up to max_scale_sec.
+## Utilities
 
-### `dfa_alpha(x: np.ndarray, fs: float, min_win_sec: float, max_win_sec: float, n_win: int) -> Dict[str, object]`
-> Detrended Fluctuation Analysis on z-scored signal (integrated profile).
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `coarse_grain` | `(x, scale)` | Non-overlapping average; drops remainder. |
+| `sampen` | `(x, m=2, r_ratio=0.2)` | Sample Entropy (m,r) with Chebyshev metric. |
+| `count_matches` | `(X, tol)` | *No description* |
+| `mse_curve` | `(x, fs, max_scale_sec=5.0, m=2, ...)` | Compute MSE over integer coarse-grain scales up to max_scale_sec. |
+| `dfa_alpha` | `(x, fs, min_win_sec=0.25, ...)` | Detrended Fluctuation Analysis on z-scored signal (integrated profile). |
+| `phase_randomize` | `(x)` | *No description* |
 
-### `phase_randomize(x: np.ndarray) -> np.ndarray`
+## Private Helpers
 
-### `run_mse_dfa_multiscale(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], time_col: str, ...) -> Dict[str, object]`
-> MSE + DFA with surrogate validation, for ignition and baseline windows.
-
-### `build_drive(wins)`
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |

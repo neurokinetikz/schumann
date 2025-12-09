@@ -1,50 +1,48 @@
 # hidden_markov
 
-**Total functions:** 18 (18 public, 0 private)
+## Overview
 
-## Public Functions
+Event-related & HMM approaches — simple validity tests & graphs
 
-### `infer_fs(RECORDS: pd.DataFrame, time_col: str) -> float`
+**Module Statistics:**
+- Total Functions: 18
+- Public Functions: 18
+- Private Functions: 0
 
-### `get_series(RECORDS: pd.DataFrame, name: str) -> np.ndarray`
+## Main Analysis
 
-### `bandpass(x: np.ndarray, fs: float, f1: float, f2: float, order: int) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_hmm_state_tests` | `(RECORDS, eeg_channels, sr_channel, ...)` | 1) Build band-power features; fit GMM(K) → state(t). |
 
-### `slice_epoch(x: np.ndarray, i0: int, i1: int) -> Optional[np.ndarray]`
+## Detection
 
-### `detect_schumann_bursts(RECORDS: pd.DataFrame, sr_channel: str, time_col: str, center_hz: float, half_bw_hz: float, ...) -> Dict[str, object]`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_schumann_bursts` | `(RECORDS, sr_channel, ...)` | *No description* |
 
-### `morlet_cwt(sig: np.ndarray, fs: float, freqs: np.ndarray, w0: float) -> np.ndarray`
-> Complex Morlet CWT via FFT-convolution.
+## Data Processing
 
-### `erp_ersp_itc(RECORDS: pd.DataFrame, eeg_channels: List[str], sr_channel: str, time_col: str, win_sec: Tuple[float, float], ...) -> Dict[str, object]`
-> Build ERP/ERSP/ITC time-locked to Schumann bursts and run simple cluster-perm tests.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
+| `slice_epoch` | `(x, i0, i1)` | *No description* |
 
-### `max_cluster_mass(mask, value_map)`
+## Utilities
 
-### `circ_shift_2d(A, sh0, sh1)`
-
-### `bandpower_features(RECORDS: pd.DataFrame, eeg_channels: List[str], time_col: str, bands: Dict[str, Tuple[float, float]], win_sec: float, ...) -> Dict[str, object]`
-> Sliding-window mean band power per band, averaged over EEG channels.
-
-### `schumann_amplitude(RECORDS: pd.DataFrame, sr_channel: str, time_col: str, center_hz: float, half_bw_hz: float, ...) -> Dict[str, object]`
-> Sliding-window Schumann envelope mean in the same grid as bandpower_features.
-
-### `hmm_states_gmm(features: np.ndarray, K: int, random_state: int) -> Dict[str, object]`
-> Fit GaussianMixture as a simple HMM surrogate; decode state(t).
-
-### `eta_state_occupancy(states: np.ndarray, T: np.ndarray, event_times: np.ndarray, span_sec: float, n_states: int) -> Dict[str, object]`
-> Event-triggered state occupancy around event_times (ETA).
-
-### `logistic_state_transition_vs_amp(states: np.ndarray, amp: np.ndarray) -> Dict[str, float]`
-> Binary transition Y: 1 if state changes at t+1; regress on Schumann amp(t).
-
-### `run_hmm_state_tests(RECORDS: pd.DataFrame, eeg_channels: List[str], sr_channel: str, time_col: str, K: int, ...) -> Dict[str, object]`
-> 1) Build band-power features; fit GMM(K) → state(t).
-
-### `erp_ersp_itc_safe(RECORDS, eeg_channels, sr_channel, time_col, win_sec, ...)`
-> Schumann-locked ERP/ERSP/ITC with edge padding and TF cluster-perm.
-
-### `take_segment(x, i_on)`
-
-### `max_cluster_mass(mask, val)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `infer_fs` | `(RECORDS, time_col='Timestamp')` | *No description* |
+| `get_series` | `(RECORDS, name)` | *No description* |
+| `morlet_cwt` | `(sig, fs, freqs, w0=6.0)` | Complex Morlet CWT via FFT-convolution. |
+| `erp_ersp_itc` | `(RECORDS, eeg_channels, sr_channel, ...)` | Build ERP/ERSP/ITC time-locked to Schumann bursts and run simple cluster-perm... |
+| `max_cluster_mass` | `(mask, value_map)` | *No description* |
+| `circ_shift_2d` | `(A, sh0, sh1)` | *No description* |
+| `bandpower_features` | `(RECORDS, eeg_channels, ...)` | Sliding-window mean band power per band, averaged over EEG channels. |
+| `schumann_amplitude` | `(RECORDS, sr_channel, ...)` | Sliding-window Schumann envelope mean in the same grid as bandpower_features. |
+| `hmm_states_gmm` | `(features, K=3, random_state=0)` | Fit GaussianMixture as a simple HMM surrogate; decode state(t). |
+| `eta_state_occupancy` | `(states, T, event_times, ...)` | Event-triggered state occupancy around event_times (ETA). |
+| `logistic_state_transition_vs_amp` | `(states, amp)` | Binary transition Y: 1 if state changes at t+1; regress on Schumann amp(t). |
+| `erp_ersp_itc_safe` | `(RECORDS, eeg_channels, sr_channel, ...)` | Schumann-locked ERP/ERSP/ITC with edge padding and TF cluster-perm. |
+| `take_segment` | `(x, i_on)` | *No description* |
+| `max_cluster_mass` | `(mask, val)` | *No description* |

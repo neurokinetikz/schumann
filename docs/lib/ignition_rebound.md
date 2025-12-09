@@ -1,20 +1,26 @@
 # ignition_rebound
 
-**Total functions:** 6 (6 public, 0 private)
+## Overview
 
-## Public Functions
+Ignition vs Rebound Power Plots
 
-### `bandpower_to_long(rows: pd.DataFrame, kind: str) -> pd.DataFrame`
+**Module Statistics:**
+- Total Functions: 6
+- Public Functions: 6
+- Private Functions: 0
 
-### `plot_bandpower(rows: pd.DataFrame, kind: str, groupby: str)`
+## Plotting
 
-### `plot_bandpower_conditions(long: pd.DataFrame, focus_electrodes)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `plot_bandpower` | `(rows, kind='rel', groupby='electrode')` | *No description* |
+| `plot_bandpower_conditions` | `(long, focus_electrodes=None)` | *No description* |
+| `plot_topomap_grid` | `(df, bands=...)` | Plot a grid of topomaps for multiple bands in one figure. |
+| `plot_topomap_from_power` | `(df, band='rel_Alpha')` | Plot a scalp topomap from a per-electrode power table. |
+| `plot_topomap_grid_from_power` | `(df, bands=None)` | Plot a grid of topomaps for multiple bands from a per-electrode power table. |
 
-### `plot_topomap_grid(df: pd.DataFrame, bands)`
-> Plot a grid of topomaps for multiple bands in one figure.
+## Utilities
 
-### `plot_topomap_from_power(df: pd.DataFrame, band: str)`
-> Plot a scalp topomap from a per-electrode power table.
-
-### `plot_topomap_grid_from_power(df: pd.DataFrame, bands: list)`
-> Plot a grid of topomaps for multiple bands from a per-electrode power table.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `bandpower_to_long` | `(rows, kind='rel')` | *No description* |

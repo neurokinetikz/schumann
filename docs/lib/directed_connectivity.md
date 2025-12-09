@@ -1,26 +1,33 @@
 # directed_connectivity
 
-**Total functions:** 8 (5 public, 3 private)
+## Overview
 
-## Public Functions
+DLPFC → Sensory Top-Down Connectivity (Source-space)
 
-### `df_to_raw(records: pd.DataFrame, ch_names: List[str], sfreq: float, montage: str) -> mne.io.Raw`
-> Convert a (Timestamp + EEG.<ch>.FILTERED) DataFrame into MNE RawArray.
+**Module Statistics:**
+- Total Functions: 8
+- Public Functions: 5
+- Private Functions: 3
 
-### `phase_transfer_entropy_stub() -> float`
-> Stub for PTE (wire IDTxl/JIDT here if desired).
+## Main Analysis
 
-### `sensor_directed_connectivity(raw: mne.io.BaseRaw, windows: List[Tuple[float, float]], bands: Dict[str, Tuple[float, float]], source_ch: str, posterior_chs: Tuple[str, ...], ...) -> pd.DataFrame`
-> Compute dPLI + (pairwise) Granger from F4→posterior sensors per event window & band.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_topdown_ignition_pipeline` | `(records, electrodes, fs, raw, ...)` | Run SENSOR or SOURCE pipeline. |
 
-### `source_directed_connectivity(raw: mne.io.BaseRaw, windows: List[Tuple[float, float]], subjects_dir: str, subject: str, trans: str, ...) -> pd.DataFrame`
-> Compute dPLI + conditional Granger: DLPFC_R→(occipital/temporal/parietal) per window & band.
+## Utilities
 
-### `run_topdown_ignition_pipeline(records: Optional[pd.DataFrame], electrodes: Optional[List[str]], fs: Optional[float], raw: Optional[mne.io.BaseRaw], windows: List[Tuple[float, float]], ...) -> pd.DataFrame`
-> Run SENSOR or SOURCE pipeline.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `df_to_raw` | `(records, ch_names, sfreq, ...)` | Convert a (Timestamp + EEG.<ch>.FILTERED) DataFrame into MNE RawArray. |
+| `phase_transfer_entropy_stub` | `()` | Stub for PTE (wire IDTxl/JIDT here if desired). |
+| `sensor_directed_connectivity` | `(raw, windows, bands=BANDS, ...)` | Compute dPLI + (pairwise) Granger from F4→posterior sensors per event window ... |
+| `source_directed_connectivity` | `(raw, windows, subjects_dir, subject, ...)` | Compute dPLI + conditional Granger: DLPFC_R→(occipital/temporal/parietal) per... |
 
-## Private/Helper Functions
+## Private Helpers
 
-- `_compute_dpli(data2xT: np.ndarray, sfreq: float, fmin: float, ...)`
-- `_conditional_granger(source: np.ndarray, target: np.ndarray, conditioners: Optional[np.ndarray], ...)`
-- `_pick(labels_list: List[str])`
+| Function | Description |
+|----------|-------------|
+| `_compute_dpli` | dPLI(source→target) for a 2×T array (row0=src, row1=tgt). |
+| `_conditional_granger` | Conditional Granger: does src cause tgt given other series? ... |
+| `_pick` | *Helper function* |

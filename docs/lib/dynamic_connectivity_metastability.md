@@ -1,46 +1,58 @@
 # dynamic_connectivity_metastability
 
-**Total functions:** 18 (17 public, 1 private)
+## Overview
 
-## Public Functions
+Dynamic Connectivity & Metastability — Simple Graphs & Validation
 
-### `detect_time_col(df, candidates) -> Optional[str]`
+**Module Statistics:**
+- Total Functions: 18
+- Public Functions: 17
+- Private Functions: 1
 
-### `ensure_timestamp_column(df: pd.DataFrame, time_col: Optional[str], default_fs: float, out_name) -> str`
+## Main Analysis
 
-### `infer_fs(df: pd.DataFrame, time_col: str) -> float`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `run_dynamic_connectivity_metastability` | `(RECORDS, eeg_channels, ...)` | Dynamic connectivity & metastability with simple graphs and tests. |
 
-### `get_series(df: pd.DataFrame, name: str) -> np.ndarray`
+## Computation
 
-### `slice_concat(x: np.ndarray, fs: float, wins: Optional[List[Tuple[float, float]]]) -> np.ndarray`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `build_surrogate_matrix` | `(X)` | *No description* |
+| `build_state_matrix` | `(wins)` | *No description* |
 
-### `zscore(x)`
+## Detection
 
-### `bandpass(x, fs, f1, f2, order)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `detect_time_col` | `(df, candidates=...)` | *No description* |
 
-### `analytic_phase(x, fs, f1, f2)`
+## Data Processing
 
-### `pli_window(Xb: np.ndarray) -> np.ndarray`
-> PLI on analytic phases; Xb: (n_ch, W) bandpassed.
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `slice_concat` | `(x, fs, wins)` | *No description* |
+| `bandpass` | `(x, fs, f1, f2, order=4)` | *No description* |
 
-### `imagcoh_window(Xb: np.ndarray) -> np.ndarray`
-> Imag coherency; Xb: (n_ch, W) bandpassed.
+## Utilities
 
-### `sliding_windows(X: np.ndarray, fs: float, win_sec: float, step_sec: float)`
+| Function | Parameters | Description |
+|----------|------------|-------------|
+| `ensure_timestamp_column` | `(df, time_col=None, default_fs=128.0, ...)` | *No description* |
+| `infer_fs` | `(df, time_col)` | *No description* |
+| `get_series` | `(df, name)` | *No description* |
+| `zscore` | `(x)` | *No description* |
+| `analytic_phase` | `(x, fs, f1, f2)` | *No description* |
+| `pli_window` | `(Xb)` | PLI on analytic phases; Xb: (n_ch, W) bandpassed. |
+| `imagcoh_window` | `(Xb)` | Imag coherency; Xb: (n_ch, W) bandpassed. |
+| `sliding_windows` | `(X, fs, win_sec, step_sec)` | *No description* |
+| `kuramoto_R` | `(Xb)` | *No description* |
+| `phase_randomize` | `(x)` | *No description* |
+| `dyn_conn_for_state` | `(X, names, label)` | *No description* |
 
-### `kuramoto_R(Xb: np.ndarray) -> float`
+## Private Helpers
 
-### `phase_randomize(x: np.ndarray) -> np.ndarray`
-
-### `build_surrogate_matrix(X: np.ndarray) -> np.ndarray`
-
-### `run_dynamic_connectivity_metastability(RECORDS: pd.DataFrame, eeg_channels: List[str], ignition_windows: Optional[List[Tuple[float, float]]], baseline_windows: Optional[List[Tuple[float, float]]], band: Tuple[float, float], ...) -> Dict[str, object]`
-> Dynamic connectivity & metastability with simple graphs and tests.
-
-### `build_state_matrix(wins)`
-
-### `dyn_conn_for_state(X: np.ndarray, names: List[str], label: str)`
-
-## Private/Helper Functions
-
-- `_ensure_dir(d)`
+| Function | Description |
+|----------|-------------|
+| `_ensure_dir` | *Helper function* |
