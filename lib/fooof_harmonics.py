@@ -69,7 +69,7 @@ compare_psd_fooof()                   — Before/after comparison plot
 
 from __future__ import annotations
 from typing import Dict, List, Optional, Sequence, Tuple, Union, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -335,9 +335,13 @@ class FOOOFHarmonicResult:
     freqs: np.ndarray  # Frequency axis
     psd: np.ndarray  # Original PSD
     per_harmonic_fits: bool = False  # Whether per-harmonic fitting was used
+    # Non-SR peak fields (for cluster analysis)
+    unmatched_peaks: List[Dict] = field(default_factory=list)  # Peaks not matching any SR harmonic
+    all_peaks: List[Dict] = field(default_factory=list)  # All detected peaks (matched + unmatched)
 
     def __repr__(self):
         harms = ', '.join(f'{h:.2f}' for h in self.harmonics)
+        n_unmatched = len(self.unmatched_peaks)
         if self.per_harmonic_fits:
             # Show range of β values for per-harmonic fits
             if isinstance(self.aperiodic_exponent, list):
@@ -348,10 +352,12 @@ class FOOOFHarmonicResult:
                 r2_str = f"R²=[{min(self.r_squared):.3f}..{max(self.r_squared):.3f}]"
             else:
                 r2_str = f"R²={self.r_squared:.3f}"
-            return (f"FOOOFHarmonicResult(harmonics=[{harms}], {beta_str}, {r2_str}, per_harmonic=True)")
+            return (f"FOOOFHarmonicResult(harmonics=[{harms}], {beta_str}, {r2_str}, "
+                    f"per_harmonic=True, non_sr_peaks={n_unmatched})")
         else:
             return (f"FOOOFHarmonicResult(harmonics=[{harms}], "
-                    f"β={self.aperiodic_exponent:.3f}, R²={self.r_squared:.3f})")
+                    f"β={self.aperiodic_exponent:.3f}, R²={self.r_squared:.3f}, "
+                    f"non_sr_peaks={n_unmatched})")
 
 
 def detect_harmonics_fooof(
@@ -648,6 +654,9 @@ def detect_harmonics_fooof(
         ap_exps = [np.nan] * len(f_can)
         r_squareds = [np.nan] * len(f_can)
         models = [None] * len(f_can)
+        all_peaks_combined = []  # All peaks from all frequency range fits
+        unmatched_combined = []  # Unmatched peaks from all frequency range fits
+        seen_peak_groups = set()  # Track which groups we've already collected peaks from
 
         # Convert search_halfband to list for indexing
         if isinstance(search_halfband, (int, float)):
@@ -692,18 +701,34 @@ def detect_harmonics_fooof(
             # Extract peaks from this group's FOOOF fit
             peak_params_group = _get_peak_params(fm_group)
 
+            # Collect all peaks from this group (only once per unique freq range)
+            if fr_tuple not in seen_peak_groups and len(peak_params_group) > 0:
+                seen_peak_groups.add(fr_tuple)
+                for row in peak_params_group:
+                    all_peaks_combined.append({
+                        'freq': float(row[0]),
+                        'power': float(row[1]),
+                        'bandwidth': float(row[2]),
+                        'freq_range_min': f_min,
+                        'freq_range_max': f_max
+                    })
+
             # Extract aperiodic parameters for this group
             ap_params_group = _get_aperiodic_params(fm_group)
             r_squared_group = _get_r_squared(fm_group)
 
+            # Track matched peak indices for this group
+            group_matched_mask = np.zeros(len(peak_params_group), dtype=bool) if len(peak_params_group) > 0 else np.array([], dtype=bool)
+
             # Match each harmonic in this group to the peaks
             for idx, f0 in harm_indices_and_freqs:
                 # Match this single canonical frequency to the group's peaks
-                harms_single, pows_single, bws_single = match_peaks_to_canonical(
+                harms_single, pows_single, bws_single, unmatched_single = match_peaks_to_canonical(
                     peak_params_group,
                     [f0],
                     search_halfband=halfbands[idx],
-                    method=match_method
+                    method=match_method,
+                    return_unmatched=True
                 )
 
                 # Store results for this harmonic
@@ -714,6 +739,21 @@ def detect_harmonics_fooof(
                 ap_exps[idx] = float(ap_params_group[1])
                 r_squareds[idx] = float(r_squared_group)
                 models[idx] = fm_group  # Share the same model for harmonics in this group
+
+            # After processing all harmonics in this group, find truly unmatched peaks
+            # (peaks not matched by ANY harmonic in this freq range)
+            if len(peak_params_group) > 0:
+                # Run match for all harmonics in group at once to find unmatched
+                group_f_can = [f0 for (idx, f0) in harm_indices_and_freqs]
+                group_halfbands = [halfbands[idx] for (idx, f0) in harm_indices_and_freqs]
+                _, _, _, group_unmatched = match_peaks_to_canonical(
+                    peak_params_group,
+                    group_f_can,
+                    search_halfband=group_halfbands,
+                    method=match_method,
+                    return_unmatched=True
+                )
+                unmatched_combined.extend(group_unmatched)
 
         # Create result with per-harmonic β values
         result = FOOOFHarmonicResult(
@@ -726,7 +766,9 @@ def detect_harmonics_fooof(
             model=models,
             freqs=freqs,
             psd=psd,
-            per_harmonic_fits=True  # Set flag since we have per-harmonic results
+            per_harmonic_fits=True,  # Set flag since we have per-harmonic results
+            unmatched_peaks=unmatched_combined,
+            all_peaks=all_peaks_combined
         )
 
         return harmonics, result
@@ -740,6 +782,8 @@ def detect_harmonics_fooof(
         ap_exps = []
         r_squareds = []
         models = []
+        all_peaks_combined = []  # All peaks from all per-harmonic fits
+        unmatched_combined = []  # Unmatched peaks from all per-harmonic fits
 
         # Convert search_halfband to list for indexing
         if isinstance(search_halfband, (int, float)):
@@ -794,12 +838,25 @@ def detect_harmonics_fooof(
 
             # Extract peaks and match to this single canonical frequency
             peak_params_h = _get_peak_params(fm_h)
-            harms_h, pows_h, bws_h = match_peaks_to_canonical(
+            harms_h, pows_h, bws_h, unmatched_h = match_peaks_to_canonical(
                 peak_params_h,
                 [f0],  # Single canonical frequency
                 search_halfband=halfbands[i],  # Use this harmonic's halfband
-                method=match_method
+                method=match_method,
+                return_unmatched=True
             )
+
+            # Collect all peaks and unmatched peaks from this harmonic's fit
+            if len(peak_params_h) > 0:
+                for row in peak_params_h:
+                    all_peaks_combined.append({
+                        'freq': float(row[0]),
+                        'power': float(row[1]),
+                        'bandwidth': float(row[2]),
+                        'harmonic_window_idx': i,
+                        'harmonic_window_center': f0
+                    })
+            unmatched_combined.extend(unmatched_h)
 
             # Extract aperiodic parameters for this harmonic
             ap_params_h = _get_aperiodic_params(fm_h)
@@ -825,7 +882,9 @@ def detect_harmonics_fooof(
             model=models,
             freqs=freqs,
             psd=psd,
-            per_harmonic_fits=True
+            per_harmonic_fits=True,
+            unmatched_peaks=unmatched_combined,
+            all_peaks=all_peaks_combined
         )
 
         return harmonics, result
@@ -852,12 +911,23 @@ def detect_harmonics_fooof(
 
         # Extract peaks and match to canonical harmonics
         peak_params = _get_peak_params(fm)
-        harmonics, powers, bandwidths = match_peaks_to_canonical(
+        harmonics, powers, bandwidths, unmatched = match_peaks_to_canonical(
             peak_params,
             f_can,
             search_halfband=search_halfband,
-            method=match_method
+            method=match_method,
+            return_unmatched=True
         )
+
+        # Build all_peaks list from peak_params
+        all_peaks = []
+        if len(peak_params) > 0:
+            for row in peak_params:
+                all_peaks.append({
+                    'freq': float(row[0]),
+                    'power': float(row[1]),
+                    'bandwidth': float(row[2])
+                })
 
         # Extract aperiodic parameters
         ap_params = _get_aperiodic_params(fm)
@@ -874,7 +944,9 @@ def detect_harmonics_fooof(
             model=fm,
             freqs=freqs,
             psd=psd,
-            per_harmonic_fits=False
+            per_harmonic_fits=False,
+            unmatched_peaks=unmatched,
+            all_peaks=all_peaks
         )
 
         return harmonics, result
@@ -992,8 +1064,10 @@ def match_peaks_to_canonical(
     peak_params: np.ndarray,
     f_can: Sequence[float],
     search_halfband: Union[float, Sequence[float]] = 0.8,
-    method: str = 'distance'
-) -> Tuple[List[float], List[float], List[float]]:
+    method: str = 'distance',
+    return_unmatched: bool = False
+) -> Union[Tuple[List[float], List[float], List[float]],
+           Tuple[List[float], List[float], List[float], List[Dict]]]:
     """
     Match FOOOF-detected peaks to canonical Schumann harmonics.
 
@@ -1013,6 +1087,9 @@ def match_peaks_to_canonical(
         - 'distance': Pick closest to canonical frequency (default)
         - 'power': Pick strongest (highest power)
         - 'average': Power-weighted average of all peaks in window
+    return_unmatched : bool
+        If True, also return peaks that were not matched to any canonical
+        frequency (non-SR peaks). Default False for backward compatibility.
 
     Returns
     -------
@@ -1022,6 +1099,9 @@ def match_peaks_to_canonical(
         Peak powers at harmonics (or NaN if no match).
     bandwidths : list of float
         Peak bandwidths (or NaN if no match).
+    unmatched_peaks : list of dict (only if return_unmatched=True)
+        List of peaks not matched to any canonical frequency.
+        Each dict has keys: 'freq', 'power', 'bandwidth'.
 
     Examples
     --------
@@ -1037,11 +1117,11 @@ def match_peaks_to_canonical(
     ...     method='power'  # Pick strongest
     ... )
 
-    >>> # Average multiple peaks
-    >>> harms, pows, bws = match_peaks_to_canonical(
+    >>> # Get unmatched (non-SR) peaks too
+    >>> harms, pows, bws, non_sr = match_peaks_to_canonical(
     ...     peak_params, (7.83, 14.3, 20.8),
-    ...     search_halfband=1.0,
-    ...     method='average'
+    ...     search_halfband=0.8,
+    ...     return_unmatched=True
     ... )
     """
     # Validate method
@@ -1063,6 +1143,10 @@ def match_peaks_to_canonical(
     powers = []
     bandwidths = []
 
+    # Track which peaks are matched (for return_unmatched)
+    n_peaks = len(peak_params) if len(peak_params) > 0 else 0
+    matched_mask = np.zeros(n_peaks, dtype=bool) if n_peaks > 0 else np.array([], dtype=bool)
+
     for f0, halfband in zip(f_can, halfbands):
         lo, hi = f0 - halfband, f0 + halfband
 
@@ -1083,6 +1167,7 @@ def match_peaks_to_canonical(
             bandwidths.append(np.nan)
         else:
             candidates = peak_params[in_range]
+            candidate_indices = np.where(in_range)[0]
 
             if method == 'distance':
                 # Pick peak closest to canonical frequency
@@ -1091,6 +1176,8 @@ def match_peaks_to_canonical(
                 harmonics.append(float(best[0]))
                 powers.append(float(best[1]))
                 bandwidths.append(float(best[2]))
+                # Mark this peak as matched
+                matched_mask[candidate_indices[idx]] = True
 
             elif method == 'power':
                 # Pick strongest peak (highest power)
@@ -1099,9 +1186,14 @@ def match_peaks_to_canonical(
                 harmonics.append(float(best[0]))
                 powers.append(float(best[1]))
                 bandwidths.append(float(best[2]))
+                # Mark this peak as matched
+                matched_mask[candidate_indices[idx]] = True
 
             elif method == 'average':
                 # Power-weighted average of all peaks in window
+                # Mark ALL peaks in window as matched (they're averaged together)
+                matched_mask[candidate_indices] = True
+
                 if len(candidates) == 1:
                     # Single peak - just use it
                     harmonics.append(float(candidates[0, 0]))
@@ -1119,6 +1211,19 @@ def match_peaks_to_canonical(
                     harmonics.append(float(avg_freq))
                     powers.append(float(avg_power))
                     bandwidths.append(float(avg_bw))
+
+    if return_unmatched:
+        # Collect peaks that weren't matched to any canonical frequency
+        unmatched_peaks = []
+        if n_peaks > 0:
+            unmatched_indices = np.where(~matched_mask)[0]
+            for idx in unmatched_indices:
+                unmatched_peaks.append({
+                    'freq': float(peak_params[idx, 0]),
+                    'power': float(peak_params[idx, 1]),
+                    'bandwidth': float(peak_params[idx, 2])
+                })
+        return harmonics, powers, bandwidths, unmatched_peaks
 
     return harmonics, powers, bandwidths
 

@@ -11,7 +11,7 @@
 # is drop-in compatible.
 
 from __future__ import annotations
-import os, json
+import os, json, re
 from typing import Optional, List, Tuple, Dict, Union
 import numpy as np
 import pandas as pd
@@ -294,7 +294,7 @@ def _msc_bandwidth_specificity(X: np.ndarray, fs: float,
     msc_sr_list = []
     msc_off_list = []
 
-    for f0 in sr_freqs[:min(3, len(sr_freqs))]:  # Use first 3 harmonics
+    for f0 in sr_freqs:  # Use all specified harmonics
         # MSC at SR frequency
         X_sr = bandpass_safe(X, fs, f0 - bw, f0 + bw)
         ref_sr = bandpass_safe(ref, fs, f0 - bw, f0 + bw)
@@ -613,6 +613,7 @@ def detect_ignitions_session(
     electrode_xy: Optional[Dict[str, Tuple[float,float]]] = None,
     harmonics: Tuple[int,...] = (2,3,4,5,6,7),
     harmonics_hz: Optional[List[float]] = None,
+    labels: Optional[List[str]] = None,  # Custom labels for harmonics (e.g., ['sr1', 'sr1.5', 'sr2', ...])
     harmonic_bw_hz: Optional[float] = None,
     harmonic_method: str = 'psd',  # 'psd', 'fooof_session', 'fooof_event', 'fooof_hybrid'
     fooof_freq_range: Optional[Tuple[float, float]] = None,
@@ -840,6 +841,19 @@ def detect_ignitions_session(
     valid_harmonics = [f for f, _ in valid_pairs]
     valid_bandwidths = [bw for _, bw in valid_pairs]
     hbw = valid_bandwidths[0] if valid_bandwidths else half_bw_scalar
+
+    # Generate or validate harmonic labels
+    if labels is not None:
+        # Filter labels same way harmonics are filtered (keep those below Nyquist)
+        if len(labels) != len(harmonic_centers):
+            raise ValueError(f"labels length ({len(labels)}) must match harmonics_hz length ({len(harmonic_centers)})")
+        valid_mask = [(f0 + bw) < (fs/2.0 - 1e-3) for f0, bw in zip(harmonic_centers, harmonic_bw_list)]
+        harmonic_labels = [lbl for lbl, keep in zip(labels, valid_mask) if keep]
+        if not harmonic_labels:
+            harmonic_labels = [labels[0]] if labels else ['sr1']
+    else:
+        # Default: sr1, sr2, sr3, ...
+        harmonic_labels = [f'sr{i+1}' for i in range(len(valid_harmonics))]
 
     base_idx = None
     base_tolerance = max(half_bw_scalar, 0.8)
@@ -1171,6 +1185,23 @@ def detect_ignitions_session(
             harmonic_centers_hz=ignition_freqs, harmonic_bw_hz=hbw
         )
 
+        # HSI_canonical: using only sr1, sr3, sr5 (canonical Schumann harmonics)
+        canonical_labels_hsi = ['sr1', 'sr3', 'sr5']
+        canonical_freqs_hsi = []
+        for clbl in canonical_labels_hsi:
+            if clbl in harmonic_labels:
+                idx = harmonic_labels.index(clbl)
+                if idx < len(ignition_freqs):
+                    canonical_freqs_hsi.append(ignition_freqs[idx])
+        if len(canonical_freqs_hsi) >= 2:  # Need at least sr1 + one overtone
+            HSI_canonical, _ = _harmonic_stack_index_flexible(
+                v_sr, fs,
+                base_hz=canonical_freqs_hsi[0], base_bw_hz=bw0,
+                harmonic_centers_hz=canonical_freqs_hsi, harmonic_bw_hz=hbw
+            )
+        else:
+            HSI_canonical = np.nan
+
         # Estimate per-event fundamental (base) to sanitize MaxH against local base
         try:
             fw, Pw = signal.welch(v_sr, fs=fs, nperseg=min(4096,int(2*fs)))
@@ -1253,6 +1284,23 @@ def detect_ignitions_session(
             sr_freqs=ignition_freqs[:min(3, len(ignition_freqs))],
             bw=bw0
         )
+
+        # FSI_canonical: using only sr1, sr3, sr5 (canonical Schumann harmonics)
+        canonical_labels_fsi = ['sr1', 'sr3', 'sr5']
+        canonical_freqs_fsi = []
+        for clbl in canonical_labels_fsi:
+            if clbl in harmonic_labels:
+                idx = harmonic_labels.index(clbl)
+                if idx < len(ignition_freqs):
+                    canonical_freqs_fsi.append(ignition_freqs[idx])
+        if canonical_freqs_fsi:
+            freq_specificity_canonical = _frequency_specificity_index(
+                Xw, fs,
+                sr_freqs=canonical_freqs_fsi,
+                bw=bw0
+            )
+        else:
+            freq_specificity_canonical = np.nan
 
         # MSC Bandwidth Specificity Ratio (MSC sharpness at SR freqs)
         msc_bandwidth_ratio = _msc_bandwidth_specificity(
@@ -1391,32 +1439,26 @@ def detect_ignitions_session(
             'seed_flow_validation': bool(seed_flow_role == 'generator'),
             'seed_score': seed_score_value,
             'type_label': type_label,
-            'sr_z_max': sr_z_max,
-            'sr2_z_max': sr2_z_max,
-            'sr3_z_max': sr3_z_max,
-            # Add all harmonic frequencies dynamically
+            # Add all harmonic frequencies dynamically using labels
             # Show "NaN" if power is NaN (no peak detected in CANON window)
-            **{f'sr{i+1}': ("NaN" if (i < len(ignition_powers) and np.isnan(ignition_powers[i]))
+            **{harmonic_labels[i]: ("NaN" if (i < len(ignition_powers) and np.isnan(ignition_powers[i]))
                             else f"{ignition_freqs[i]:.2f}" if i < len(ignition_freqs) else "nan")
-               for i in range(max_modes)},
-            # Add harmonic 4+ z_max values dynamically (harmonics 2-3 already defined above)
-            **{f'sr{i+2}_z_max': harmonic_z_max[i] if i < len(harmonic_z_max) else np.nan
-               for i in range(2, len(harmonic_z_max))},
-            'msc_7p83_v': msc_v,
-            'msc_sr2_v': msc_sr2_v,
-            'msc_sr3_v': msc_sr3_v,
-            # Add harmonic 4+ MSC values dynamically (harmonics 1-3 already defined above)
-            **{f'msc_sr{i+1}_v': msc_modes[i] if i < len(msc_modes) else np.nan
-               for i in range(3, len(msc_modes))},
-            'plv_mean_pm5': plv_mean_pm5,
-            'plv_sr2_pm5': plv_sr2_pm5,
-            'plv_sr3_pm5': plv_sr3_pm5,
-            # Add harmonic 4+ PLV values dynamically (harmonics 1-3 already defined above)
-            **{f'plv_sr{i+1}_pm5': plv_modes[i] if i < len(plv_modes) else np.nan
-               for i in range(3, len(plv_modes))},
+               for i in range(min(max_modes, len(harmonic_labels)))},
+            # Add harmonic z_max values dynamically using labels
+            **{f'{harmonic_labels[0]}_z_max': sr_z_max},
+            **{f'{harmonic_labels[i]}_z_max': harmonic_z_max[i-1] if (i-1) < len(harmonic_z_max) else np.nan
+               for i in range(1, len(harmonic_labels))},
+            # Add harmonic MSC values dynamically using labels
+            **{f'msc_{harmonic_labels[i]}_v': msc_modes[i] if i < len(msc_modes) else np.nan
+               for i in range(len(harmonic_labels))},
+            # Add harmonic PLV values dynamically using labels
+            **{f'plv_{harmonic_labels[i]}_pm5': plv_modes[i] if i < len(plv_modes) else np.nan
+               for i in range(len(harmonic_labels))},
             'HSI': HSI,
+            'HSI_canonical': HSI_canonical,
             'spectral_slope': spectral_slope,
             'freq_specificity': freq_specificity,
+            'FSI_canonical': freq_specificity_canonical,
             'msc_bandwidth_ratio': msc_bandwidth_ratio,
 
             't0_net': t0_net, 'zR_max': zR_max_ev, 'zR_peak_±5s': zR_peak_5s,
@@ -1511,10 +1553,84 @@ def detect_ignitions_session(
             'coverage_pct': float(100.0*np.sum(events['duration_s'])/max(1e-9, t[-1]-t[0]))
         }
 
-    events.to_csv(os.path.join(out_dir,'events.csv'), index=False)
+    # Compute sr_score before export
+    if not events.empty:
+        def _col_vals(name: str, fill: float = np.nan) -> np.ndarray:
+            if name in events.columns:
+                return pd.to_numeric(events[name], errors='coerce').to_numpy()
+            return np.full(len(events), fill, dtype=float)
+
+        # Phi-weighting function: parse exponent from label, return weight = φ^(-exponent)
+        def _phi_weight_from_label(label: str) -> float:
+            """
+            Parse phi exponent from harmonic label and return weight.
+            Labels: sr1, sr1.5, sr2, sr2o, sr2.5, sr3, sr4, sr5, sr6
+            Weight = φ^(-exponent)
+            """
+            PHI = 1.618033988749895
+            # Special case: sr2o (observed 2nd harmonic) → exponent 1.25
+            if label == 'sr2o':
+                return PHI ** (-1.25)
+            # Parse numeric part from label (e.g., "sr1.5" → 1.5, "sr3" → 3)
+            match = re.search(r'sr(\d+\.?\d*)', label)
+            if match:
+                num = float(match.group(1))
+                # Exponent mapping: sr1→0, sr1.5→0.5, sr2→1, sr2.5→1.5, sr3→2, etc.
+                exponent = num - 1
+                return PHI ** (-exponent)
+            return 1.0  # Default weight if label doesn't match
+
+        n_harmonics = len(harmonic_labels)
+        weights = np.array([_phi_weight_from_label(lbl) for lbl in harmonic_labels])
+
+        # Weighted scores across all available harmonics
+        _z_vals = np.column_stack([_col_vals(f'{lbl}_z_max', fill=0.0) for lbl in harmonic_labels]) if n_harmonics > 0 else np.zeros((len(events), 1))
+        _msc_vals = np.column_stack([_col_vals(f'msc_{lbl}_v', fill=0.0) for lbl in harmonic_labels]) if n_harmonics > 0 else np.zeros((len(events), 1))
+        _plv_vals = np.column_stack([_col_vals(f'plv_{lbl}_pm5', fill=0.0) for lbl in harmonic_labels]) if n_harmonics > 0 else np.zeros((len(events), 1))
+
+        _z_score = np.sum(_z_vals * weights, axis=1)
+        _msc_score = np.sum(_msc_vals * weights, axis=1)
+        _plv_score = np.sum(_plv_vals * weights, axis=1)
+
+        _HSIv = _col_vals('HSI', fill=0.0)
+        events['sr_score'] = _z_score**0.7 * _msc_score**1.2 * _plv_score / (1 + _HSIv)
+
+        # Canonical score: only sr1, sr3, sr5 (observed Schumann harmonics)
+        # Uses FSI_canonical and HSI_canonical for full consistency
+        canonical_labels = ['sr1', 'sr3', 'sr5']
+        canonical_present = [lbl for lbl in canonical_labels if lbl in harmonic_labels]
+        if canonical_present:
+            # Fixed canonical weights for sr1, sr3, sr5
+            _canonical_weight_map = {'sr1': 0.618, 'sr3': 0.326, 'sr5': 0.146}
+            canonical_weights = np.array([_canonical_weight_map[lbl] for lbl in canonical_present])
+            _z_canon = np.column_stack([_col_vals(f'{lbl}_z_max', fill=0.0) for lbl in canonical_present])
+            _msc_canon = np.column_stack([_col_vals(f'msc_{lbl}_v', fill=0.0) for lbl in canonical_present])
+            _plv_canon = np.column_stack([_col_vals(f'plv_{lbl}_pm5', fill=0.0) for lbl in canonical_present])
+            _z_score_canon = np.sum(_z_canon * canonical_weights, axis=1)
+            _msc_score_canon = np.sum(_msc_canon * canonical_weights, axis=1)
+            _plv_score_canon = np.sum(_plv_canon * canonical_weights, axis=1)
+            # Use HSI_canonical for canonical sr_score
+            _HSIv_canon = _col_vals('HSI_canonical', fill=0.0)
+            events['sr_score_canonical'] = _z_score_canon**0.7 * _msc_score_canon**1.2 * _plv_score_canon / (1 + _HSIv_canon)
+        else:
+            events['sr_score_canonical'] = np.nan
+
+    # Build export columns (same as display)
+    export_base_cols = ['session_name','t_start','t0_net','sr_z_peak_t','t_end','duration_s']
+    export_freq_cols = harmonic_labels
+    export_zmax_cols = [f'{lbl}_z_max' for lbl in harmonic_labels]
+    export_msc_cols = [f'msc_{lbl}_v' for lbl in harmonic_labels]
+    export_plv_cols = [f'plv_{lbl}_pm5' for lbl in harmonic_labels]
+    export_other_cols = ['HSI', 'HSI_canonical', 'freq_specificity', 'FSI_canonical', 'sr_score', 'sr_score_canonical', 'ignition_freqs']
+    export_cols = [c for c in export_base_cols + export_freq_cols + export_zmax_cols + export_msc_cols + export_plv_cols + export_other_cols
+                   if c in events.columns]
+    events_export = events[export_cols].copy()
+    events_export.rename(columns={'freq_specificity': 'FSI'}, inplace=True)
+
+    events_export.to_csv(os.path.join(out_dir,'events.csv'), index=False)
     pd.DataFrame([summary]).to_csv(os.path.join(out_dir,'summary.csv'), index=False)
     if make_passport:
-        events.to_csv(os.path.join(out_dir,'event_passport.csv'), index=False)
+        events_export.to_csv(os.path.join(out_dir,'event_passport.csv'), index=False)
 
     if verbose:
         print("\n=== Ignition Detection — Session Summary ===\n")
@@ -1598,24 +1714,27 @@ def detect_ignitions_session(
                 return np.full(total_events, fill, dtype=float)
 
             dur   = col_vals('duration_s')
-            srmax = col_vals('sr_z_max', fill=0.0)
-            sr2max = col_vals('sr2_z_max', fill=0.0)
-            s3rmax = col_vals('sr3_z_max', fill=0.0)
+            # Use harmonic_labels for column lookups
+            srmax = col_vals(f'{harmonic_labels[0]}_z_max', fill=0.0) if len(harmonic_labels) > 0 else np.zeros(total_events)
+            sr2max = col_vals(f'{harmonic_labels[1]}_z_max', fill=0.0) if len(harmonic_labels) > 1 else np.zeros(total_events)
+            s3rmax = col_vals(f'{harmonic_labels[2]}_z_max', fill=0.0) if len(harmonic_labels) > 2 else np.zeros(total_events)
 
             srpm5 = col_vals('sr_z_mean_pm5')
 
-            plvpm5 = col_vals('plv_mean_pm5', fill=0.0)
-            plv_sr2_pm5 = col_vals('plv_sr2_pm5', fill=0.0)
-            plv_sr3_pm5 = col_vals('plv_sr3_pm5', fill=0.0)
+            plvpm5 = col_vals(f'plv_{harmonic_labels[0]}_pm5', fill=0.0) if len(harmonic_labels) > 0 else np.zeros(total_events)
+            plv_sr2_pm5 = col_vals(f'plv_{harmonic_labels[1]}_pm5', fill=0.0) if len(harmonic_labels) > 1 else np.zeros(total_events)
+            plv_sr3_pm5 = col_vals(f'plv_{harmonic_labels[2]}_pm5', fill=0.0) if len(harmonic_labels) > 2 else np.zeros(total_events)
 
-            msc_v  = col_vals('msc_7p83_v', fill=0.0)
-            msc_sr2_v  = col_vals('msc_sr2_v', fill=0.0)
-            msc_sr3_v  = col_vals('msc_sr3_v', fill=0.0)
+            msc_v  = col_vals(f'msc_{harmonic_labels[0]}_v', fill=0.0) if len(harmonic_labels) > 0 else np.zeros(total_events)
+            msc_sr2_v  = col_vals(f'msc_{harmonic_labels[1]}_v', fill=0.0) if len(harmonic_labels) > 1 else np.zeros(total_events)
+            msc_sr3_v  = col_vals(f'msc_{harmonic_labels[2]}_v', fill=0.0) if len(harmonic_labels) > 2 else np.zeros(total_events)
 
             rec_cov = (100.0*np.nansum(dur)/max(1e-9, t[-1]-t[0])) if dur.size else np.nan
             
             fsz  = col_vals('fs_z')
             HSIv = col_vals('HSI', fill=0.0)
+            HSIv_canon = col_vals('HSI_canonical', fill=0.0)
+            FSIv_canon = col_vals('FSI_canonical', fill=0.0)
             PELv = col_vals('PEL_sec')
             spread= col_vals('spread_time_sec')
             SFv   = col_vals('SF')
@@ -1627,33 +1746,42 @@ def detect_ignitions_session(
             msc_score = (0.618*msc_v + 0.236*msc_sr2_v + 0.146*msc_sr3_v)
             plv_score = (0.618*plvpm5 + 0.236*plv_sr2_pm5 + 0.146*plv_sr3_pm5)
 
-            freq_specificity = col_vals('freq_specificity', fill=0.0)
-            # Based on theoretical reasoning about what freq_specificity means
-            FREQ_SPEC_MIN = 0.05  # Below this = barely distinguishable from noise
-            FREQ_SPEC_MAX = 0.35  # Above this = unrealistically narrow (measurement limit)
+            sr_score = z_score**0.7 * msc_score**1.2 * plv_score / (1 + HSIv)
 
-            freq_spec_norm = np.clip(
-                (freq_specificity - FREQ_SPEC_MIN) / (FREQ_SPEC_MAX - FREQ_SPEC_MIN),
-                0.0, 1.0
-            )
-
-            freq_refinement = 0.95 + 0.10 * freq_spec_norm
-
-            sr_score = z_score**0.7 * msc_score**1.2 * plv_score * freq_refinement / (1 + HSIv)
-            
-            # t_score = 1.0 + (2.0 - 1.0) * (1.0 - np.exp(-(dur - 20.0)/35.0))
-            # score = sr_score * t_score
+            # Canonical score: only sr1, sr3, sr5 (observed Schumann harmonics)
+            # Uses FSI_canonical and HSI_canonical for full consistency
+            canonical_labels = ['sr1', 'sr3', 'sr5']
+            canonical_present = [lbl for lbl in canonical_labels if lbl in harmonic_labels]
+            if canonical_present:
+                # Fixed canonical weights for sr1, sr3, sr5
+                _canonical_weight_map = {'sr1': 0.618, 'sr3': 0.326, 'sr5': 0.146}
+                canon_weights = np.array([_canonical_weight_map[lbl] for lbl in canonical_present])
+                z_canon = np.column_stack([col_vals(f'{lbl}_z_max', fill=0.0) for lbl in canonical_present])
+                msc_canon = np.column_stack([col_vals(f'msc_{lbl}_v', fill=0.0) for lbl in canonical_present])
+                plv_canon = np.column_stack([col_vals(f'plv_{lbl}_pm5', fill=0.0) for lbl in canonical_present])
+                z_score_canon = np.sum(z_canon * canon_weights, axis=1)
+                msc_score_canon = np.sum(msc_canon * canon_weights, axis=1)
+                plv_score_canon = np.sum(plv_canon * canon_weights, axis=1)
+                # Use HSI_canonical for canonical sr_score
+                HSIv_canon = col_vals('HSI_canonical', fill=0.0)
+                sr_score_canonical = z_score_canon**0.7 * msc_score_canon**1.2 * plv_score_canon / (1 + HSIv_canon)
+            else:
+                sr_score_canonical = np.full(total_events, np.nan)
 
             events['sr_score'] = sr_score
+            events['sr_score_canonical'] = sr_score_canonical
             # events['t_score'] = t_score
             # events['score'] = score
 
             # print(f"  Duration (s)           — median [IQR]: {fmt_iqr(dur)}")
-            print(f"  SR1 z max (ref)        — median [IQR]: {fmt_iqr(srmax)}")
-            print(f"  SR2 z max (ref)        — median [IQR]: {fmt_iqr(sr2max)}")
-            print(f"  SR3 z max (ref)        — median [IQR]: {fmt_iqr(s3rmax)}")
-            print(f"  MSC@~7.8 Hz (virtual)  — median [IQR]: {fmt_iqr(msc_v)}")
-            print(f"  PLV@~7.8 Hz (±5 s)     — median [IQR]: {fmt_iqr(plvpm5)}")
+            lbl0 = harmonic_labels[0] if len(harmonic_labels) > 0 else 'SR1'
+            lbl1 = harmonic_labels[1] if len(harmonic_labels) > 1 else 'SR2'
+            lbl2 = harmonic_labels[2] if len(harmonic_labels) > 2 else 'SR3'
+            print(f"  {lbl0} z max (ref)      — median [IQR]: {fmt_iqr(srmax)}")
+            print(f"  {lbl1} z max (ref)      — median [IQR]: {fmt_iqr(sr2max)}")
+            print(f"  {lbl2} z max (ref)      — median [IQR]: {fmt_iqr(s3rmax)}")
+            print(f"  MSC@{lbl0} (virtual)    — median [IQR]: {fmt_iqr(msc_v)}")
+            print(f"  PLV@{lbl0} (±5 s)       — median [IQR]: {fmt_iqr(plvpm5)}")
             # print(f"  Seed composite score   — median [IQR]: {fmt_iqr(events['seed_score'].to_numpy(dtype=float))}")
             # print(f"  Seed outflow score     — median [IQR]: {fmt_iqr(events['seed_flow_out'].to_numpy(dtype=float))}")
             # if not flow_role_counts.empty:
@@ -1666,7 +1794,10 @@ def detect_ignitions_session(
             
             # print(f"  PAC MVL (θ–γ)          — median [IQR]: {fmt_iqr(pacv)}")
             print(f"  HSI (harmonic stack)   — median [IQR]: {fmt_iqr(HSIv)}")
+            print(f"  HSI (canonical)        — median [IQR]: {fmt_iqr(HSIv_canon)}")
+            print(f"  FSI (canonical)        — median [IQR]: {fmt_iqr(FSIv_canon)}")
             print(f"  SR-Score               — median [IQR]: {fmt_iqr(sr_score)}")
+            print(f"  SR-Score (canonical)   — median [IQR]: {fmt_iqr(sr_score_canonical)}")
             # print(f"  T-Score                — median [IQR]: {fmt_iqr(t_score)}")
             # print(f"  Score                  — median [IQR]: {fmt_iqr(score)}")
             print(f"  Coverage of recording  — {rec_cov:.2f}%")
@@ -1680,41 +1811,29 @@ def detect_ignitions_session(
             
             try:
                 top_by_srz = events.sort_values('t_start', ascending=True)
-                # Build column list dynamically to include all harmonics
-                base_cols = ['t_start','t0_net','sr_z_peak_t','t_end','duration_s',
-                            'type_label','seed_hemisphere','seed_roi','seed_ch','seed_score']
+                # Build column list dynamically using harmonic_labels
+                base_cols = ['t_start','t0_net','sr_z_peak_t','t_end','duration_s']
 
-                # Determine max number of harmonics from the columns that exist
-                # Look for sr1, sr2, sr3, sr4, ... columns (exactly "sr" followed by digits only)
-                sr_cols_in_df = [c for c in events.columns
-                                if c.startswith('sr') and len(c) > 2 and c[2:].isdigit()]
-                num_harmonics = len(sr_cols_in_df) if sr_cols_in_df else 3
+                # Use harmonic_labels for column names
+                sr_freq_cols = harmonic_labels
+                sr_zmax_cols = [f'{lbl}_z_max' for lbl in harmonic_labels]
+                msc_cols = [f'msc_{lbl}_v' for lbl in harmonic_labels]
+                plv_cols = [f'plv_{lbl}_pm5' for lbl in harmonic_labels]
 
-                # Add harmonic frequency columns (sr1, sr2, sr3, sr4, ...)
-                sr_freq_cols = [f'sr{i+1}' for i in range(num_harmonics)]
-
-                # Add harmonic z_max columns (sr_z_max, sr2_z_max, sr3_z_max, sr4_z_max, ...)
-                sr_zmax_cols = ['sr_z_max'] + [f'sr{i+2}_z_max' for i in range(num_harmonics-1)]
-
-                # Add harmonic MSC columns (msc_7p83_v, msc_sr2_v, msc_sr3_v, ...)
-                msc_cols = ['msc_7p83_v'] + [f'msc_sr{i+2}_v' for i in range(num_harmonics-1)]
-
-                # Add harmonic PLV columns (plv_mean_pm5, plv_sr2_pm5, plv_sr3_pm5, ...)
-                plv_cols = ['plv_mean_pm5'] + [f'plv_sr{i+2}_pm5' for i in range(num_harmonics-1)]
-
-                other_cols = ['HSI', 'sr_score']
+                other_cols = ['HSI', 'freq_specificity', 'sr_score', 'sr_score_canonical']
 
                 # Combine all columns and filter by what exists in the dataframe
                 cols2 = [c for c in base_cols + sr_freq_cols + sr_zmax_cols + msc_cols + plv_cols + other_cols
                         if c in events.columns]
                 df_display = top_by_srz[cols2].copy()
+                df_display.rename(columns={'freq_specificity': 'FSI'}, inplace=True)
                 num_cols = df_display.select_dtypes(include=[np.number]).columns
                 for col in num_cols:
                     if col in ['t_start','t_end','duration_s']:
                         df_display[col] = df_display[col].apply(lambda v: f"{v:.0f}" if pd.notnull(v) else "nan")
                     else:
                         df_display[col] = df_display[col].apply(lambda v: f"{v:.3f}" if pd.notnull(v) else "nan")
-                print("\nTop events by Score (sr_z_max * msc * plv / (1 + HSI)):")
+                print(f"\nTop events by Score ({harmonic_labels[0]}_z_max * msc * plv / (1 + HSI)):")
                 print(df_display.to_string(index=False, justify='center'))
             except Exception:
                 pass
@@ -1729,7 +1848,7 @@ def detect_ignitions_session(
         # print("  - events.csv, summary.csv, event_passport.csv")
 
     result = {
-        'events': events,
+        'events': events_export,
         'summary': summary,
         'ignition_windows': ignition_windows_final,
         'ignition_windows_rounded': ignition_windows_rounded_final,
@@ -1750,7 +1869,8 @@ def detect_ignitions_session(
             'MaxH_hz_distribution': os.path.join(out_dir,'MaxH_hz_distribution.png')
         },
         'harmonics_used_hz': np.array(valid_harmonics, dtype=float),
-        'harmonics_source': ('custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples')
+        'harmonics_source': ('custom' if (harmonics_hz and len(harmonics_hz)) else 'multiples'),
+        'harmonic_labels': harmonic_labels
     }
     return result, ignition_windows_rounded_final
 

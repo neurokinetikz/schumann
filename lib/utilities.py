@@ -136,11 +136,11 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
     """Load CSV as in user's snippet and return a pre-processed DataFrame.
     Expects columns: 'Timestamp' (seconds or ms) and 'EEG.<electrode>' per channel.
     """
-    if device == 'emotiv':
+    if device in ('emotiv', 'epoc', 'insight'):
         df = pd.read_csv(csv_path, low_memory=False, header=header)
         df['Timestamp'] = np.arange(len(df)) / fs
         df = df.sort_values(by=['Timestamp']).reset_index(drop=True)
-    else:
+    elif device == 'muse':
         df = pd.read_csv(csv_path, low_memory=False, header=0).sort_values(by=['timestamps']).reset_index(drop=True)
         df.rename(columns={'timestamps': 'Timestamp'}, inplace=True)
         
@@ -166,7 +166,9 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
                 pass
         
         df = df.dropna(subset=['EEG.AF7', 'EEG.AF8','EEG.TP9', 'EEG.TP10'])
-    
+    else:
+        raise ValueError(f"Unknown device type: '{device}'. Supported: 'emotiv', 'epoc', 'insight', 'muse'")
+
     # Normalize time to start at 0
     df['Timestamp'] = df['Timestamp'] - df['Timestamp'].iloc[0]
     # If Timestamp looks like milliseconds, convert to seconds

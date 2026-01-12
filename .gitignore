@@ -1,4 +1,5 @@
-scripts/*
+results/*
+md/*
 extracted*
 exports*
 data/*
@@ -10,3 +11,5 @@ session_exports/*
 *.png
 *.csv
 *.npy
+*.vvp
+*.vcd

@@ -202,6 +202,52 @@ def bicoherence_discrete_auto(x, fs, f_list, nperseg=None, step=None):
     return np.asarray(f_list), B
 
 
+def bicoherence_harmonic_triad(x, fs, f1, f2, f3_target, nperseg=None, step=None):
+    """Compute bicoherence for a specific harmonic triad: φ(f1) + φ(f2) = φ(f3_target).
+
+    Unlike standard bicoherence which tests at f1+f2, this tests at a specified
+    target frequency f3_target (a detected harmonic).
+
+    This is used for testing true Schumann harmonic triads where f1+f2≈f3 and
+    f3 is a detected harmonic frequency (not just the arithmetic sum).
+
+    Args:
+        x: Signal array
+        fs: Sampling rate (Hz)
+        f1, f2: Input frequencies (Hz)
+        f3_target: Target frequency to test (detected harmonic, not necessarily f1+f2)
+        nperseg: FFT segment length (default: max(4*fs, 2048))
+        step: Step between segments (default: nperseg//2)
+
+    Returns:
+        bicoherence: Coupling strength |B(f1,f2,f3_target)| in range [0,1]
+
+    Example:
+        # Test if two 7.8 Hz oscillations couple to produce the 14.3 Hz harmonic
+        B = bicoherence_harmonic_triad(eeg, fs=128, f1=7.8, f2=7.8, f3_target=14.3)
+    """
+    if nperseg is None:
+        nperseg = int(max(4*fs, 2048))
+    if step is None:
+        step = nperseg//2
+
+    freqs, Xs = _fft_segments(x, fs, nperseg, step)
+
+    def bin_idx(f):
+        return int(np.argmin(np.abs(freqs - f)))
+
+    i1 = bin_idx(f1)
+    i2 = bin_idx(f2)
+    i3 = bin_idx(f3_target)  # Use target harmonic, not f1+f2!
+
+    # Standard bicoherence formula, but at f3_target instead of f1+f2
+    num = np.mean(Xs[:, i1] * Xs[:, i2] * np.conj(Xs[:, i3]))
+    den = np.sqrt(np.mean(np.abs(Xs[:, i1]*Xs[:, i2])**2) * np.mean(np.abs(Xs[:, i3])**2) + 1e-20)
+    B = np.abs(num) / (den + 1e-20)
+
+    return B
+
+
 def bicoherence_discrete_cross(sr, eeg, fs, f_list, nperseg=None, step=None):
     """Cross‑bicoherence variant: B_sse(f1,f2) = <S(f1) S(f2) E*(f1+f2)> / sqrt(<|S(f1)S(f2)|^2><|E(f1+f2)|^2>).
     """
