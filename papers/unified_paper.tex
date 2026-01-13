@@ -121,7 +121,7 @@ We report the discovery and systematic validation of golden ratio ($\phisym = 1.
 
 \textbf{The Emergent Hypothesis:} Recognition of $\phisym^n$ ratios in SIE data prompted the question: Does this architecture govern continuous EEG organization? We formalized the framework as $f(n) = f_0 \times \phisym^n$ where $f_0 = 7.60$ Hz (from independent geophysical Schumann Resonance monitoring), generating specific predictions: peak depletion at integer $n$ (boundaries), enrichment at half-integer $n$ (attractors), and maximal enrichment at $n + 0.618$ (noble positions).
 
-\textbf{Study 2 (Validation):} Spectral parameterization of 244,955 oscillatory peaks across 968 sessions confirmed all predictions. Boundaries showed $-18\%$ depletion; attractors showed $+21\%$ enrichment; noble positions showed $+39\%$ enrichment. Gamma band exhibited the strongest adherence ($+144.8\%$ at noble positions), consistent with functional requirements for precise phase relationships in temporal binding. The predicted hierarchy was preserved across frequency bands despite 10--50$\times$ magnitude differences. Session-level consistency reached 99.1\%. Only $\phisym$ exhibited the theoretically predicted ordering among six scaling factors tested.
+\textbf{Study 2 (Validation):} Spectral parameterization of 244,955 oscillatory peaks across 968 sessions confirmed all predictions. Boundaries showed $-18\%$ depletion; attractors showed $+21\%$ enrichment; noble positions showed $+39\%$ enrichment. Gamma band exhibited the strongest adherence ($+144.8\%$ at noble positions), consistent with functional requirements for precise phase relationships in temporal binding. The predicted hierarchy was preserved across frequency bands despite 10--50$\times$ magnitude differences. Session-level consistency reached 83.3\%. Only $\phisym$ exhibited the theoretically predicted ordering among six scaling factors tested.
 
 \textbf{Synthesis:} Convergent $f_0$ estimates (SIE mean: 7.63 Hz; spectral optimum: 7.60 Hz) and the precision gradient (SIE ratios $<1\%$ error; spectral tolerance $\pm 0.2$ Hz) support a ``substrate-ignition'' model: the $\phisym^n$ lattice exists continuously as an architectural constraint, with SIEs representing transient amplification of this substrate. The independence-convergence paradox resolves through population-level encoding---each frequency band is independently constrained to distributions whose means satisfy $\phisym^n$ relationships.
 
@@ -235,8 +235,8 @@ The initial discovery and characterization of SIEs was conducted using EEG recor
 To test generalization beyond meditation, we analyzed three publicly available datasets:
 \begin{itemize}
     \item \textbf{PhySF} \parencite{albuquerque2024physf}: N = 26 participants performing mathematical tasks designed to induce flow states, recorded with Emotiv EPOC X
-    \item \textbf{MultiPENG} \parencite{albuquerque2023multimodal}: N = 39 participants playing video games across varying difficulty levels
-    \item \textbf{VEP} \parencite{faisal2023eeg}: N = 32 participants viewing natural object images (Emotiv EPOC X)
+    \item \textbf{MultiPENG} \parencite{albuquerque2023multimodal}: N = 36 participants playing video games across varying difficulty levels
+    \item \textbf{VEP} \parencite{faisal2023eeg}: N = 29 participants viewing natural object images (Emotiv EPOC X)
 \end{itemize}
 
 \begin{table}[H]
@@ -273,7 +273,7 @@ To separate oscillatory (periodic) activity from aperiodic (1/f) background nois
 \begin{equation}
 \log_{10}(PSD(f)) = L(f) + \sum_{i} G_{i}(f)
 \end{equation}
-where $L(f) = b - \chi \times \log_{10}(f)$ represents the aperiodic component and $G_i(f)$ represents Gaussian periodic peaks. FOOOF parameters: frequency range 1--50 Hz, maximum 7 peaks, peak threshold 0.1 log units, peak width limits 0.3--4.0 Hz.
+where $L(f) = b - \chi \times \log_{10}(f)$ represents the aperiodic component and $G_i(f)$ represents Gaussian periodic peaks. FOOOF parameters: frequency range 1--50 Hz, maximum 20 peaks, minimum peak height 0.0001 log units, peak width limits 0.2--20.0 Hz.
 
 \subsubsection{Seven-Stage Detection Pipeline}
 
@@ -345,14 +345,14 @@ Spectral analysis of detected SIEs revealed nine distinct harmonic frequencies s
 \toprule
 Harmonic & Measured (Hz) & CV (\%) & $N$ & EEG Band \\
 \midrule
-SR1 & $7.63 \pm 0.33$ & 3.18 & 1121 & $\theta/\alpha$ Boundary \\
+SR1 & $7.63 \pm 0.33$ & 4.35 & 1121 & $\theta/\alpha$ Boundary \\
 SR1.5 & $9.96 \pm 0.35$ & 3.56 & 1139 & $\alpha$ Attractor \\
 SR2 & $11.98 \pm 0.40$ & 3.37 & 1050 & $\alpha/\beta$ Boundary \\
 SR2o & $13.76 \pm 0.44$ & 3.17 & 1150 & Low $\beta$ \\
 SR2.5 & $15.50 \pm 0.46$ & 2.99 & 1188 & $\beta$ Attractor \\
-SR3 & $19.99 \pm 0.57$ & 2.02 & 1250 & $\beta$ Boundary \\
+SR3 & $19.99 \pm 0.57$ & 2.84 & 1250 & $\beta$ Boundary \\
 SR4 & $24.98 \pm 1.17$ & 4.69 & 1359 & High $\beta$ Attractor \\
-SR5 & $32.57 \pm 1.23$ & 1.79 & 1364 & $\beta/\gamma$ Boundary \\
+SR5 & $32.57 \pm 1.23$ & 3.77 & 1364 & $\beta/\gamma$ Boundary \\
 SR6 & $40.11 \pm 1.61$ & 4.01 & 1365 & $\gamma$ Attractor \\
 \bottomrule
 \end{tabular}
@@ -370,7 +370,7 @@ SR6 & $40.11 \pm 1.61$ & 4.01 & 1365 & $\gamma$ Attractor \\
 \end{figure}
 
 \subsubsection{Synchronization Metrics}
-SIE events exhibited robust network synchronization. At the fundamental frequency SR1, 81.5\% of events showed phase-locking values exceeding 0.6, and 60.5\% showed magnitude-squared coherence above 0.5. Both MSC (0.552) and PLV (0.689) showed gradients decreasing from SR1 to SR6, with SR1 exhibiting highest synchronization---confirming whole-brain coordination during SIE events consistent with communication through coherence \parencite{fries2015rhythms}.
+SIE events exhibited robust network synchronization. At the fundamental frequency SR1, 81.5\% of events showed phase-locking values exceeding 0.6, and 60.5\% showed magnitude-squared coherence above 0.5. Both MSC (0.552) and PLV (0.689) showed gradients decreasing from SR1 to SR6, with SR1 exhibiting highest synchronization---confirming whole-brain coordination during SIE events consistent with communication through coherence \parencite{pascal_fries_7b9d1ced}.
 
 Power spectral elevation at SR harmonics was quantified using z-scores relative to session baselines. The fundamental frequency SR1 showed strongest elevation ($z = 4.76 \pm 2.95$), with systematic decrease at higher harmonics, confirming multi-band spectral enhancement during SIE events.
 
@@ -658,7 +658,7 @@ This maps all frequencies to the unit interval $[0, 1)$, where $u = 0$ correspon
 \subsection{Results: Position-Type Enrichment and Band Structure}
 
 \subsubsection{Peak Detection Results}
-FOOOF parameterization yielded \textbf{244,955 oscillatory peaks} across 968 sessions, with a median peak frequency of 11.2 Hz and mean of 17.1 peaks per channel (Figure~\ref{fig:peak_distribution}).
+FOOOF parameterization yielded \textbf{244,955 oscillatory peaks} across 968 sessions, with a median peak frequency of 21.2 Hz and mean of 18.5 peaks per channel (Figure~\ref{fig:peak_distribution}).
 
 \begin{figure}[H]
     \centering
@@ -752,9 +752,8 @@ To test whether $\phisym$ is uniquely optimal, we compared five alternative scal
 \subsubsection{Session-Level Consistency}
 Across 968 sessions:
 \begin{itemize}
-    \item \textbf{99.1\%} showed attractor enrichment $>$ boundary enrichment
-    \item Session-level Cohen's $d = 0.80$ for attractor enrichment
-    \item Stricter paired test: 83.3\% showed the pattern, $d = 0.89$
+    \item \textbf{83.3\%} showed attractor enrichment $>$ boundary enrichment
+    \item Session-level Cohen's $d = 0.89$ for attractor enrichment
 \end{itemize}
 
 \subsubsection{$f_0$ Sensitivity Analysis}
