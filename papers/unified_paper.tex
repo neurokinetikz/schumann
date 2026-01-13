@@ -5,6 +5,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{graphicx}
+\graphicspath{{images/}}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{multirow}
@@ -361,6 +362,13 @@ SR6 & $40.11 \pm 1.61$ & 4.01 & 1365 & $\gamma$ Attractor \\
 \end{tablenotes}
 \end{table}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{download (5).png}
+    \caption{Exemplar SIE event spectral and temporal dynamics. (A) Time-frequency spectrogram showing harmonic activation at $\phisym^n$ frequencies. (B) Harmonic piano-roll showing z-score elevation across all six harmonics. (C) Envelope traces overlaid with phase-locking value, demonstrating coherence-first dynamics. (D) Harmonic Stack Index showing fundamental dominance (decreasing HSI) preceding ignition.}
+    \label{fig:exemplar_spectral}
+\end{figure}
+
 \subsubsection{Synchronization Metrics}
 SIE events exhibited robust network synchronization. At the fundamental frequency SR1, 81.5\% of events showed phase-locking values exceeding 0.6, and 60.5\% showed magnitude-squared coherence above 0.5. Both MSC (0.552) and PLV (0.689) showed gradients decreasing from SR1 to SR6, with SR1 exhibiting highest synchronization---confirming whole-brain coordination during SIE events consistent with communication through coherence \parencite{fries2015rhythms}.
 
@@ -378,6 +386,13 @@ Individual SIE events exhibited a stereotyped six-phase temporal evolution:
 \end{enumerate}
 
 The coherence-first signature---phase alignment preceding amplitude elevation by 2--3 seconds---is consistent with network-level coordination rather than local oscillatory bursts \parencite{varela2001brainweb}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{download (6).png}
+    \caption{Exemplar SIE event network dynamics. (G) Harmonic envelope comparison between baseline and ignition states. (H) EEG-SR coherence by electrode and harmonic. (I) State-space trajectory showing coherence vs.\ power. (J) Kuramoto order parameter time series. (K) Transfer entropy matrix. (L) Cross-scale theta-gamma correlation dynamics.}
+    \label{fig:exemplar_network}
+\end{figure}
 
 \subsubsection{Cross-Device and Cross-Context Validation}
 One-way ANOVA tested whether harmonic frequencies differed across devices and contexts:
@@ -463,7 +478,14 @@ The peak-based null control (Null Control D) provided the most stringent test. C
     \item $p$-value: $< 0.0001$ (permutation test)
 \end{itemize}
 
-SIE events show \textbf{significantly better $\phisym$-precision} than random triplets sampled from actual EEG spectral peaks. The highly significant result ($p < 0.0001$) with large effect size ($d = 1.44$) indicates that SIE detection preferentially identifies frequency combinations exhibiting exceptional $\phisym^n$ organization.
+SIE events show \textbf{significantly better $\phisym$-precision} than random triplets sampled from actual EEG spectral peaks. The highly significant result ($p < 0.0001$) with large effect size ($d = 1.44$) indicates that SIE detection preferentially identifies frequency combinations exhibiting exceptional $\phisym^n$ organization (Figure~\ref{fig:nc7_peak_based}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{nc7_peak_based_results.png}
+    \caption{Peak-based null control results. (A) Histogram comparing $\phisym$-error distributions for SIE events (red) versus random triplets sampled from actual FOOOF peaks (gray). SIE events cluster at lower $\phisym$-error values. (B) Box plot comparison showing significantly lower $\phisym$-error for SIE events. (C) Cumulative distribution functions demonstrating separation between distributions. (D) Percentile comparison across the error distribution.}
+    \label{fig:nc7_peak_based}
+\end{figure}
 
 \subsubsection{The Emergent Question}
 The discovery of precise $\phisym^n$ ratio organization in transient high-coherence events raised a fundamental question that motivated the second phase of this research:
@@ -636,7 +658,14 @@ This maps all frequencies to the unit interval $[0, 1)$, where $u = 0$ correspon
 \subsection{Results: Position-Type Enrichment and Band Structure}
 
 \subsubsection{Peak Detection Results}
-FOOOF parameterization yielded \textbf{244,955 oscillatory peaks} across 968 sessions, with a median peak frequency of 11.2 Hz and mean of 17.1 peaks per channel.
+FOOOF parameterization yielded \textbf{244,955 oscillatory peaks} across 968 sessions, with a median peak frequency of 11.2 Hz and mean of 17.1 peaks per channel (Figure~\ref{fig:peak_distribution}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{golden_ratio_peaks_ALL.png}
+    \caption{Distribution of 244,955 spectral peaks detected via FOOOF across 968 sessions. Vertical lines indicate $\phisym^n$ frequency predictions: boundaries at integer $n$ (solid orange), attractors at half-integer $n$ (dashed red), 1\degree\ nobles at $n+0.618$ (dotted teal), and 2\degree\ nobles at $n+0.382$ (dashed olive). Shaded regions demarcate traditional EEG bands.}
+    \label{fig:peak_distribution}
+\end{figure}
 
 \subsubsection{Position-Type Enrichment}
 The aggregate peak distribution confirmed all theoretical predictions:
@@ -657,7 +686,14 @@ Attractor & $k + 0.5$ & Enrichment & $+21.0\%$ & [$+19.7\%$, $+22.4\%$] \\
 \end{tabular}
 \end{table}
 
-The observed ordering (Boundary $<$ 2\degree\ Noble $<$ Attractor $<$ 1\degree\ Noble) exactly matches theoretical predictions. Kendall's $\tau = 1.0$ (perfect agreement), $p = 0.042$.
+The observed ordering (Boundary $<$ 2\degree\ Noble $<$ Attractor $<$ 1\degree\ Noble) exactly matches theoretical predictions. Kendall's $\tau = 1.0$ (perfect agreement), $p = 0.042$ (Figure~\ref{fig:position_enrichment}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\linewidth]{phi_position_enrichment.png}
+    \caption{Position-type enrichment in the $\phisym^n$ framework with 95\% bootstrap confidence intervals ($n = 243{,}704$ peaks). Bars show percent deviation from uniform expectation. Boundaries (integer $n$): $-18.0\%$ [CI: $-19.1\%$ to $-17.0\%$]. 1\degree\ nobles ($n + 0.618$): $+39.0\%$ [CI: $+37.7\%$ to $+40.4\%$]. Attractors ($n + 0.5$): $+21.0\%$ [CI: $+19.7\%$ to $+22.4\%$]. The monotonic ordering (Boundary $<$ 2\degree\ Noble $<$ Attractor $<$ 1\degree\ Noble) confirms theoretical predictions.}
+    \label{fig:position_enrichment}
+\end{figure}
 
 \subsubsection{Alignment with Predicted Landmarks}
 Key spectral landmarks aligned precisely with $\phisym^n$ predictions:
@@ -690,14 +726,28 @@ High Beta & $\phisym^{2}$ to $\phisym^{3}$ & 71,641 & $+8.8\%$ \\
 \end{tabular}
 \end{table}
 
-\textbf{Gamma dominance:} The gamma band showed dramatically stronger $\phisym^n$ adherence ($+144.8\%$ at 1\degree\ noble) than any other band. This is mechanistically required: gamma oscillations subserve temporal binding and feature integration within $\sim$25 ms windows, demanding precise phase relationships \parencite{bartos2007synaptic}. Lower-frequency bands serve functions tolerating greater flexibility.
+\textbf{Gamma dominance:} The gamma band showed dramatically stronger $\phisym^n$ adherence ($+144.8\%$ at 1\degree\ noble) than any other band (Figure~\ref{fig:band_stratified}). This is mechanistically required: gamma oscillations subserve temporal binding and feature integration within $\sim$25 ms windows, demanding precise phase relationships \parencite{bartos2007synaptic}. Lower-frequency bands serve functions tolerating greater flexibility.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{phi_band_stratified_analysis.png}
+    \caption{Band-stratified lattice coordinate analysis. Six panels show histograms of the fractional lattice position $u = [\log_\phisym(f/\fzero)] \bmod 1$ within each $\phisym^n$-defined frequency band. Vertical lines mark theoretically significant positions. Gamma shows the strongest 1\degree\ noble enrichment ($+145\%$), while alpha shows weak effects due to individual alpha frequency variability.}
+    \label{fig:band_stratified}
+\end{figure}
 
 \subsection{Validation: Cross-Device and Cross-Context Consistency}
 
 \subsubsection{Alternative Scaling Factor Comparison}
 To test whether $\phisym$ is uniquely optimal, we compared five alternative scaling factors ($e$, $\pi$, $\sqrt{2}$, 2, 1.5) at $f_0 = 7.6$ Hz.
 
-\textbf{Critical finding:} $\phisym$ is the \textit{only} scaling factor exhibiting both (1) the highest alignment score, and (2) the theoretically predicted ordering (1\degree\ Noble $>$ Attractor $>$ 2\degree\ Noble $>$ Boundary). Bootstrap comparison confirms $\phisym$ significantly outperforms all alternatives ($p < 0.001$).
+\textbf{Critical finding:} $\phisym$ is the \textit{only} scaling factor exhibiting both (1) the highest alignment score, and (2) the theoretically predicted ordering (1\degree\ Noble $>$ Attractor $>$ 2\degree\ Noble $>$ Boundary). Bootstrap comparison confirms $\phisym$ significantly outperforms all alternatives ($p < 0.001$; Figure~\ref{fig:scaling_comparison}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{phi_scaling_comparison.png}
+    \caption{Alternative scaling factor comparison at $\fzero = 7.6$ Hz. Bar height indicates overall alignment. Green bar indicates correct theoretical ordering (1\degree\ Noble $>$ Attractor $>$ 2\degree\ Noble $>$ Boundary); orange bars indicate incorrect ordering. Only $\phisym$ achieves both the highest alignment score and the correct theoretical ordering.}
+    \label{fig:scaling_comparison}
+\end{figure}
 
 \subsubsection{Session-Level Consistency}
 Across 968 sessions:
@@ -715,14 +765,28 @@ Varying $f_0$ from 7.0--8.5 Hz revealed a \textbf{0.6 Hz tolerance plateau} (7.3
     \item Neural SIE mean SR1: $7.63 \pm 0.33$ Hz
 \end{itemize}
 
-The tolerance plateau confirms that \textbf{ratios, not absolute frequencies}, are the preserved quantity---consistent with two inherently variable systems maintaining ratio architecture.
+The tolerance plateau confirms that \textbf{ratios, not absolute frequencies}, are the preserved quantity---consistent with two inherently variable systems maintaining ratio architecture (Figure~\ref{fig:f0_sensitivity}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{phi_f0_sensitivity.png}
+    \caption{$\fzero$ sensitivity analysis. \textbf{Top:} Comprehensive alignment metric vs.\ base frequency, showing optimal at 7.60 Hz (green dashed) coinciding with geophysical Schumann measurements. The canonical literature value (7.83 Hz) falls within the $>95\%$ plateau (shaded blue). \textbf{Bottom:} Position-type enrichment breakdown showing stable boundary depletion and attractor enrichment across the plateau.}
+    \label{fig:f0_sensitivity}
+\end{figure}
 
 \subsubsection{Permutation Testing}
 Two complementary tests validated the findings:
 
 \textbf{Uniform Frequency Test:} $p < 0.0001$ (0/10,000 permutations exceeded observed). EEG peak frequencies show significant $\phisym^n$ structure, not uniform distribution.
 
-\textbf{Phase-Shift Test:} $p = 0.21$. The 0.6 Hz tolerance plateau explains this: multiple grid positions within the natural variability range achieve comparable alignment, consistent with ratio preservation.
+\textbf{Phase-Shift Test:} $p = 0.21$. The 0.6 Hz tolerance plateau explains this: multiple grid positions within the natural variability range achieve comparable alignment, consistent with ratio preservation (Figure~\ref{fig:permutation_test}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{phi_dual_permutation_tests.png}
+    \caption{Dual permutation tests for $\phisym^n$ alignment. \textbf{Left:} Phase-shift test shows high variance in null distribution ($p = 0.21$). \textbf{Right:} Uniform frequency test shows highly significant result ($p < 0.0001$), demonstrating that observed peak frequencies are not uniformly distributed but show significant $\phisym^n$ organization.}
+    \label{fig:permutation_test}
+\end{figure}
 
 %==============================================================================
 % SECTION 5: INTEGRATION
