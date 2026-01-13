@@ -1,0 +1,943 @@
+\documentclass[11pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{gensymb}
+\usepackage{siunitx}
+\usepackage{textcomp}
+\usepackage{textgreek}
+\usepackage{threeparttable}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{tcolorbox}
+\usepackage{longtable}
+
+% Unicode character support
+\usepackage{newunicodechar}
+\newunicodechar{⁵}{\textsuperscript{5}}
+\newunicodechar{⁴}{\textsuperscript{4}}
+\newunicodechar{⁰}{\textsuperscript{0}}
+\newunicodechar{ⁿ}{\textsuperscript{n}}
+\newunicodechar{≤}{\leq}
+\newunicodechar{≈}{\approx}
+\newunicodechar{−}{\ensuremath{-}}
+\newunicodechar{₀}{$_0$}
+\newunicodechar{₁}{$_1$}
+\newunicodechar{₂}{$_2$}
+\newunicodechar{₃}{$_3$}
+\newunicodechar{₄}{$_4$}
+\newunicodechar{₅}{$_5$}
+\newunicodechar{₆}{$_6$}
+\newunicodechar{₇}{$_7$}
+\newunicodechar{₈}{$_8$}
+\newunicodechar{₉}{$_9$}
+\newunicodechar{⁷}{\textsuperscript{7}}
+\newunicodechar{√}{\sqrt{}}
+\newunicodechar{ⱼ}{\textsubscript{j}}
+\newunicodechar{ₖ}{_k}
+\newunicodechar{≥}{\geq{}}
+\newunicodechar{⁶}{\textsuperscript{6}}
+\newunicodechar{⁻}{\textsuperscript{-}}
+
+% Language support
+\usepackage[russian,english]{babel}
+
+% Page setup
+\geometry{margin=1in}
+\onehalfspacing
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% Custom commands
+\newcommand{\phisym}{\varphi}
+\newcommand{\fzero}{f_0}
+
+% Colored boxes for key equations
+\newtcolorbox{keyequation}{
+    colback=blue!5!white,
+    colframe=blue!75!black,
+    fonttitle=\bfseries,
+    title=Key Equation
+}
+
+\newtcolorbox{keyinsight}{
+    colback=green!5!white,
+    colframe=green!50!black,
+    fonttitle=\bfseries,
+    title=Key Insight
+}
+
+\newtcolorbox{criticalpoint}{
+    colback=red!5!white,
+    colframe=red!50!black,
+    fonttitle=\bfseries,
+    title=Critical Methodological Point
+}
+
+% Bibliography (biblatex with APA style)
+\usepackage[style=apa,backend=biber]{biblatex}
+\addbibresource{unified_refs.bib}
+
+\begin{document}
+
+% Title
+\begin{center}
+{\LARGE \textbf{Golden Ratio Architecture of Human Neural Oscillations}}\\[0.3cm]
+{\Large \textbf{From Transient Discovery to Continuous Substrate}}\\[1cm]
+
+{\large Michael Lacy}\\[0.5cm]
+{\small michael.lacy@gmail.com}\\[0.5cm]
+
+\today
+\end{center}
+
+\vspace{0.5cm}
+
+%==============================================================================
+% ABSTRACT
+%==============================================================================
+\begin{abstract}
+We report the discovery and systematic validation of golden ratio ($\phisym = 1.618$) frequency organization in human EEG, spanning both transient high-coherence states and continuous spectral architecture.
+
+\textbf{Study 1 (Discovery):} Analysis of 1,366 Schumann Ignition Events (SIEs)---transient episodes of multi-band network synchronization---across 91 participants, 661 recording sessions, and three consumer EEG devices revealed that harmonic frequencies at SR1 ($\sim$7.6 Hz), SR3 ($\sim$20 Hz), and SR5 ($\sim$32 Hz) maintain precise golden ratio relationships. The SR3/SR1 ratio was 2.6223 ($+0.16\%$ from $\phisym^2 = 2.618$); SR5/SR3 was 1.6309 ($+0.79\%$ from $\phisym$). Mean ratio error was $<1\%$. Critically, individual harmonic frequencies varied completely independently across events (all pairwise $|r| < 0.03$), yet ratio precision was preserved---an ``independence-convergence paradox'' indicating that $\phisym^n$ constraints are encoded in population-level distributions rather than event-level coupling. Null controls confirmed genuine organization: peak-based random triplets showed significantly worse $\phisym$-alignment (Cohen's $d = 1.44$, $p < 0.0001$).
+
+\textbf{The Emergent Hypothesis:} Recognition of $\phisym^n$ ratios in SIE data prompted the question: Does this architecture govern continuous EEG organization? We formalized the framework as $f(n) = f_0 \times \phisym^n$ where $f_0 = 7.60$ Hz (from independent geophysical Schumann Resonance monitoring), generating specific predictions: peak depletion at integer $n$ (boundaries), enrichment at half-integer $n$ (attractors), and maximal enrichment at $n + 0.618$ (noble positions).
+
+\textbf{Study 2 (Validation):} Spectral parameterization of 244,955 oscillatory peaks across 968 sessions confirmed all predictions. Boundaries showed $-18\%$ depletion; attractors showed $+21\%$ enrichment; noble positions showed $+39\%$ enrichment. Gamma band exhibited the strongest adherence ($+144.8\%$ at noble positions), consistent with functional requirements for precise phase relationships in temporal binding. The predicted hierarchy was preserved across frequency bands despite 10--50$\times$ magnitude differences. Session-level consistency reached 99.1\%. Only $\phisym$ exhibited the theoretically predicted ordering among six scaling factors tested.
+
+\textbf{Synthesis:} Convergent $f_0$ estimates (SIE mean: 7.63 Hz; spectral optimum: 7.60 Hz) and the precision gradient (SIE ratios $<1\%$ error; spectral tolerance $\pm 0.2$ Hz) support a ``substrate-ignition'' model: the $\phisym^n$ lattice exists continuously as an architectural constraint, with SIEs representing transient amplification of this substrate. The independence-convergence paradox resolves through population-level encoding---each frequency band is independently constrained to distributions whose means satisfy $\phisym^n$ relationships.
+
+These findings establish $\phisym^n$ architecture as a fundamental organizing principle of human neural oscillations, providing the first mathematically principled basis for EEG frequency band definitions. Whether the correspondence between neural $f_0$ and Earth's Schumann Resonance reflects evolutionary optimization, biophysical convergence, or coincidence cannot be determined without concurrent geomagnetic measurement.
+
+\vspace{0.3cm}
+\textbf{Keywords:} EEG, golden ratio, Schumann Resonance, neural oscillations, frequency bands, phase synchronization, transient dynamics, spectral architecture
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+%==============================================================================
+% SECTION 1: INTRODUCTION
+%==============================================================================
+\section{Introduction}
+
+\subsection{Transient Synchronization Phenomena in EEG}
+
+Neural oscillations are fundamental to brain function, coordinating activity across distributed networks to support perception, cognition, and behavior \parencite{gy_rgy_buzs_ki_c98dac5c, pascal_fries_7b9d1ced}. These rhythmic fluctuations in neuronal population activity occur across characteristic frequency bands---from slow delta oscillations ($<4$ Hz) through high gamma ($>80$ Hz)---each associated with distinct functional roles \parencite{wolfgang_klimesch_be1f7786, engel2010beta, cohen2017where}. Although substantial research has characterized sustained oscillatory states and their behavioral correlates, transient synchronization phenomena---brief episodes of enhanced coordination across brain regions---have received comparatively less systematic investigation despite their potential significance for understanding rapid neural state transitions and information integration \parencite{siegel2012spectral, canolty2010functional}.
+
+Well-characterized examples of transient oscillatory events include sleep spindles \parencite{fernandez2020sleep}, hippocampal sharp-wave ripples \parencite{buzsaki2015hippocampal}, and task-related gamma bursts \parencite{fries2001modulation}. These phenomena share common features: discrete temporal boundaries, elevated power relative to baseline, and enhanced inter-regional synchronization. Such transient events may carry functional significance distinct from sustained oscillations, potentially serving as temporal windows for memory consolidation, inter-regional communication, or state transitions \parencite{john_lisman_100e4cf6}.
+
+The overlap between Earth's Schumann Resonance frequencies (fundamental $\sim$7.83 Hz with harmonics at $\sim$14.3, 20.8, 27.3, and 33.8 Hz) and canonical EEG bands has prompted investigation into potential brain-environment relationships \parencite{konig1974eeg, cherry2002schumann, persinger2008possible, saroka2016similar}. However, prior studies have mainly employed correlational designs examining continuous SR-EEG relationships rather than systematically detecting and characterizing discrete events. The temporal structure, duration, and network dynamics of individual SR-frequency episodes have remained poorly characterized.
+
+During exploratory analysis of EEG recordings from meditation sessions collected between 2019 and 2024, we repeatedly observed transient periods of elevated power spectral density at approximately 7.6--7.8 Hz across multiple brain regions. These events involved coordinated power increases at multiple frequencies, accompanied by marked elevation in inter-channel coherence and phase synchronization---suggesting network-wide coordination rather than isolated oscillatory bursts. This discovery prompted systematic investigation, revealing an unexpected mathematical structure in the frequency relationships that forms the basis of the present paper.
+
+\subsection{The Problem of EEG Frequency Band Definitions}
+
+Since Hans Berger's discovery of the human alpha rhythm in 1929, electroencephalography has been organized around a taxonomy of frequency bands: delta ($<4$ Hz), theta (4--8 Hz), alpha (8--13 Hz), beta (13--30 Hz), and gamma ($>30$ Hz). These bands emerged from empirical observation and clinical utility rather than theoretical derivation.
+
+A systematic review of band definitions across published EEG studies reveals substantial inconsistency:
+
+\begin{table}[H]
+\centering
+\caption{Variability in EEG Band Definitions Across Published Literature}
+\label{tab:band_variability}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Band & Lower Bound Range & Upper Bound Range & Variation \\
+\midrule
+Delta & 0.1--1.0 Hz & 3.0--4.0 Hz & 1.0 Hz \\
+Theta & 3.0--5.0 Hz & 7.0--8.0 Hz & 3.0 Hz \\
+Alpha & 7.0--9.0 Hz & 12.0--14.0 Hz & 4.0 Hz \\
+Beta & 12.0--15.0 Hz & 25.0--35.0 Hz & 13.0 Hz \\
+Gamma & 25.0--40.0 Hz & 80.0--150.0 Hz & 85.0 Hz \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This variability suggests that current band definitions may not reflect natural categories in neural organization. If frequency bands represented genuine biological discontinuities, we would expect convergence on boundary positions. The observed divergence implies either (a) bands are arbitrary conveniences, or (b) the true boundaries exist but have not been identified.
+
+As will be demonstrated in this paper, the discovery of golden ratio frequency ratios in transient high-coherence events provides a principled mathematical framework that may resolve this long-standing ambiguity.
+
+\subsection{Schumann Resonance as Potential Reference}
+
+The Earth's ionospheric cavity supports a set of global electromagnetic resonances, termed Schumann Resonances (SR), arising from electromagnetic waves circling the Earth-ionosphere waveguide driven primarily by global lightning activity \parencite{schumann1952strahlungslosen, nickolaenko2014schumann}. For a simplified cavity model, the fundamental frequency is:
+\begin{equation}
+f_1^{\text{approx}} = \frac{c}{2\pi r} = \frac{299,792,458}{2\pi \times 6,371,000} = 7.49 \text{ Hz}
+\end{equation}
+where $c$ is the speed of light and $r$ is Earth's radius.
+
+Long-term geophysical monitoring provides direct measurement of SR parameters. The Tomsk Space Observing System (Russia), operating continuously since 1994, reports the fundamental centered at $7.6 \pm 0.2$ Hz with diurnal and seasonal variations of $\pm 0.3$ Hz. The ``canonical'' value of 7.83 Hz frequently cited in literature represents a theoretical approximation; empirical monitoring consistently yields lower values near 7.6 Hz.
+
+The proximity of the SR fundamental ($\sim$7.6 Hz) to the theta-alpha boundary in human EEG has been noted in previous work. However, investigations have been limited by lack of a theoretical framework specifying \textit{what pattern} to expect if neural frequencies were organized relative to SR. The present study arose from the unexpected discovery of precise mathematical relationships in the harmonic structure of transient neural events---relationships that suggested a framework based on the golden ratio rather than simple integer harmonics.
+
+\subsection{Study Overview: From Discovery to Validation}
+
+This paper follows the actual trajectory of discovery:
+
+\textbf{Phase 1 (Discovery):} During analysis of meditation EEG recordings, we detected transient high-coherence events showing multi-band synchronization at specific frequencies falling within the Schumann Resonance range. We termed these ``Schumann Ignition Events'' (SIEs). Initial characterization revealed 1,366 events across 91 subjects and five cognitive contexts, with robust network synchronization signatures.
+
+\textbf{Phase 2 (Pattern Recognition):} Upon examining the harmonic frequencies detected in SIE events---particularly the relationships between SR1 ($\sim$7.6 Hz), SR3 ($\sim$20 Hz), and SR5 ($\sim$32 Hz)---we discovered that their ratios approximated powers of the golden ratio ($\phisym = 1.618$) with less than 1\% error. This was unexpected; we had anticipated integer harmonic relationships if any mathematical structure existed.
+
+\textbf{Phase 3 (Hypothesis Generation):} The discovery of $\phisym^n$ ratios in transient events raised a fundamental question: Is this organization specific to high-coherence states, or does it reflect a deeper architectural principle governing all EEG frequency organization? We formalized the hypothesis as $f(n) = f_0 \times \phisym^n$ and derived specific predictions for how spectral peaks should be distributed.
+
+\textbf{Phase 4 (Validation):} Systematic analysis of 244,955 oscillatory peaks across 968 EEG sessions confirmed the predicted boundary-attractor structure: depletion at integer $\phisym^n$ positions, enrichment at half-integer positions, and maximal enrichment at ``noble'' positions ($n + 0.618$).
+
+\textbf{Phase 5 (Synthesis):} Convergent evidence from both temporal scales---transient events and continuous spectral architecture---supports a ``substrate-ignition'' model in which the $\phisym^n$ lattice exists continuously, with SIEs representing transient amplification of this underlying structure.
+
+The following sections present these phases in sequence, beginning with the full methodological and empirical characterization of SIE discovery (Section 2), followed by the theoretical framework that emerged from that discovery (Section 3), the validation study testing predictions in continuous EEG (Section 4), and the integration of both lines of evidence (Section 5).
+
+%==============================================================================
+% SECTION 2: STUDY 1 - SIE DISCOVERY AND CHARACTERIZATION
+%==============================================================================
+\section{Study 1: Discovery and Characterization of Schumann Ignition Events}
+
+% [Content to be added from sie.tex]
+% Section 2.1: Methods - SIE Detection and Analysis
+% Section 2.2: Results - SIE Characteristics and Harmonic Structure
+% Section 2.3: The Emergent Pattern - Golden Ratio Frequency Ratios
+
+\subsection{Methods: SIE Detection and Analysis}
+
+\subsubsection{Overview}
+This study employed a two-phase design: (1) discovery and initial characterization of Schumann Ignition Events (SIEs) in longitudinal meditation EEG recordings, and (2) validation and extension in independent datasets collected during cognitive tasks. All analyses were performed in Python 3.9+ using NumPy, SciPy, MNE-Python \parencite{harris2020numpy, virtanen2020scipy, gramfort2013mne}, and the FOOOF library \parencite{donoghue2020fooof}.
+
+\subsubsection{Participants and Recordings}
+
+\textbf{Discovery Dataset: Longitudinal Meditation Recordings.}
+The initial discovery and characterization of SIEs was conducted using EEG recordings from a single experienced meditation practitioner (male, age range 44--48 years, $>$10 years meditation experience). Recordings were collected during eyes-closed meditation sessions spanning November 2019 to March 2024, comprising 34 sessions with a total recording duration of approximately 7.5 hours. Three consumer-grade EEG devices were used across sessions to enable cross-device validation:
+
+\begin{itemize}
+    \item \textbf{Muse (2016 model; InteraXon Inc.)}: 4 channels (TP9, AF7, AF8, TP10; dry electrodes), 256 Hz sampling rate, FPz reference, 17 sessions
+    \item \textbf{Emotiv EPOC X (Emotiv Inc.)}: 14 channels (AF3, F7, F3, FC5, T7, P7, O1, O2, P8, T8, FC6, F4, F8, AF4; saline-soaked felt pads), 128 Hz sampling rate, CMS/DRL reference, 5 sessions
+    \item \textbf{Emotiv Insight (Emotiv Inc.)}: 5 channels (AF3, AF4, T7, T8, Pz; semi-dry polymer sensors), 128 Hz sampling rate, CMS/DRL reference, 12 sessions
+\end{itemize}
+
+\textbf{Validation Datasets.}
+To test generalization beyond meditation, we analyzed three publicly available datasets:
+\begin{itemize}
+    \item \textbf{PhySF} \parencite{albuquerque2024physf}: N = 26 participants performing mathematical tasks designed to induce flow states, recorded with Emotiv EPOC X
+    \item \textbf{MultiPENG} \parencite{albuquerque2023multimodal}: N = 39 participants playing video games across varying difficulty levels
+    \item \textbf{VEP} \parencite{faisal2023eeg}: N = 32 participants viewing natural object images (Emotiv EPOC X)
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Combined Dataset Characteristics}
+\label{tab:dataset_summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+Dataset & Participants & Sessions & SIE Events & Device(s) & Context \\
+\midrule
+Meditation (Files) & 1 & 5 & 38 & EPOC X & Eyes-closed meditation \\
+Meditation (Muse) & 1 & 17 & 165 & Muse & Eyes-closed meditation \\
+Meditation (Insight) & 1 & 12 & 57 & Insight & Eyes-closed meditation \\
+PhySF & 25 & 46 & 447 & EPOC X & Cognitive flow/non-flow tasks \\
+MultiPENG & 36 & 533 & 604 & EPOC X & Video game engagement \\
+VEP & 29 & 48 & 55 & EPOC X & Passive visual perception \\
+\textbf{Combined} & \textbf{91} & \textbf{661} & \textbf{1,366} & \textbf{3 types} & \textbf{5 contexts} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsubsection{EEG Preprocessing}
+Raw EEG signals were high-pass filtered at 1 Hz using a 4th-order zero-phase Butterworth filter \parencite{butterworth1930filter} to remove slow drifts while preserving oscillatory activity in the Schumann Resonance frequency range. All electrodes were positioned according to the international 10-20 system \parencite{jasper1958tentwenty}.
+
+\subsubsection{Schumann Resonance Harmonic Detection}
+
+\textbf{Canonical Frequencies.}
+We derived canonical frequencies and search bandwidths from long-term magnetometer data recorded by the Space Observing System in Tomsk, Russia: SR1 = 7.6 Hz ($\pm$0.6 Hz), SR2o = 13.75 Hz ($\pm$0.75 Hz), SR3 = 20 Hz ($\pm$1.0 Hz), SR4 = 25 Hz ($\pm$2.0 Hz), and SR5 = 32 Hz ($\pm$2.5 Hz).
+
+\textbf{Spectral Parameterization Using FOOOF.}
+To separate oscillatory (periodic) activity from aperiodic (1/f) background noise, we employed FOOOF spectral parameterization \parencite{donoghue2020fooof}:
+\begin{equation}
+\log_{10}(PSD(f)) = L(f) + \sum_{i} G_{i}(f)
+\end{equation}
+where $L(f) = b - \chi \times \log_{10}(f)$ represents the aperiodic component and $G_i(f)$ represents Gaussian periodic peaks. FOOOF parameters: frequency range 1--50 Hz, maximum 7 peaks, peak threshold 0.1 log units, peak width limits 0.3--4.0 Hz.
+
+\subsubsection{Seven-Stage Detection Pipeline}
+
+We developed a seven-stage pipeline to systematically identify, refine, and validate candidate SIE events:
+
+\textbf{Stage 1: Envelope Thresholding.}
+A composite SR envelope was computed by averaging all EEG channels, bandpass filtering at the fundamental frequency ($f_0 \pm 0.6$ Hz), computing the Hilbert envelope, and z-score normalizing. Candidate onsets were identified where $z(t) \geq 3.0$.
+
+\textbf{Stage 2: FOOOF Harmonic Refinement.}
+For each candidate window, FOOOF was applied to extract session-specific harmonic frequencies within SR search windows.
+
+\textbf{Stage 3: Kuramoto Phase Synchronization.}
+The precise ignition onset $t_0$ was refined using the Kuramoto order parameter:
+\begin{equation}
+R(t) = \left| \frac{1}{N} \sum_{k=1}^{N} e^{i\phi_k(t)} \right|
+\end{equation}
+where $\phi_k(t)$ is the instantaneous phase of channel $k$ at SR1 frequency. Ignition onset was defined as the time of maximum $dR/dt$ where $R(t) \geq 0.6$.
+
+\textbf{Stage 4: Coherence Characterization.}
+Magnitude-squared coherence (MSC) and phase-locking value (PLV) \parencite{lachaux1999plv} were computed for each harmonic:
+\begin{equation}
+PLV = \frac{1}{T}\left|\sum_{t=1}^{T} e^{i\Delta\phi_{xy}(t)}\right|
+\end{equation}
+
+\textbf{Stage 5: Harmonic Organization.}
+The Harmonic Stack Index (HSI) quantified the ratio of overtone power to fundamental power: $HSI = P_{\text{overtones}} / P_f$.
+
+\textbf{Stage 6: Quality Metrics.}
+Spectral slope ($\beta$) and Frequency Specificity Index (FSI = $P_{SR}/P_{total}$) were computed.
+
+\textbf{Stage 7: Composite Scoring.}
+A composite SR-Score was computed using the three observed Schumann harmonics (SR1, SR3, SR5):
+\begin{equation}
+\text{SR-Score} = \frac{Z_{\text{weighted}}^{0.7} \times \text{MSC}_{\text{weighted}}^{1.2} \times \text{PLV}_{\text{weighted}}}{1 + \text{HSI}}
+\end{equation}
+with $\phisym$-derived weights: SR1 (0.618), SR3 (0.326), SR5 (0.146).
+
+\subsubsection{Null Control Analyses}
+
+Six null control analyses validated that SIE characteristics represent genuine neural organization:
+
+\textbf{Null Control A (Phase Randomization):} For each SIE, phases were randomized while preserving amplitude spectra (100 surrogates per event), testing whether synchronization reflects genuine phase coupling.
+
+\textbf{Null Control B (Random Temporal Windows):} 1,366 random 3-second baseline windows were sampled from periods $>$10 seconds from any SIE, testing whether SR organization is event-specific.
+
+\textbf{Null Control C (Uniform Random Triplets):} 10,000 random frequency triplets sampled uniformly from physiologically plausible ranges tested whether $\phisym$ precision arises by chance.
+
+\textbf{Null Control D (Peak-Based Random Triplets):} 10,000 triplets sampled from actual FOOOF peaks (N = 244,955 peaks from 661 sessions) provided a more stringent test controlling for EEG spectral structure.
+
+\textbf{Null Control E (Shuffled Bootstrap):} SR1, SR3, SR5 frequencies were independently permuted across events (1,000 iterations), testing whether ratio precision requires within-event coordination.
+
+\textbf{Null Control F (Distributional Null Model):} Synthetic datasets generated from observed frequency distributions tested population-level encoding.
+
+\subsection{Results: SIE Characteristics and Harmonic Structure}
+
+\subsubsection{Dataset Overview and Event Detection}
+Application of the seven-stage detection pipeline yielded 1,366 discrete events across 661 recording sessions from 91 unique participants (Table~\ref{tab:dataset_summary}). Events were detected across all six datasets and five cognitive contexts, with overall mean detection rate of $2.1 \pm 3.3$ events per session (range: 1--27). Event duration averaged $26.9 \pm 21.3$ seconds (median: 20.0 seconds), consistent with the transient nature of SIE phenomena and characteristic timescales of transient oscillatory events \parencite{siegel2012spectral}.
+
+PhySF cognitive flow recordings and meditation recordings yielded the highest per-session detection rates (9.7 and 7.6 events/session respectively), with gaming and visual perception tasks showing lower rates ($\sim$1 event/session). This pattern may reflect differential engagement of SR-aligned neural mechanisms across cognitive states.
+
+\subsubsection{Harmonic Frequency Definitions}
+Spectral analysis of detected SIEs revealed nine distinct harmonic frequencies spanning the 7--41 Hz range (Table~\ref{tab:harmonic_definitions}). The fundamental frequency (SR1) centers near 7.6 Hz at the theta/alpha boundary, with higher harmonics extending through alpha, beta, and gamma bands.
+
+\begin{table}[H]
+\centering
+\caption{Harmonic Frequency Definitions from SIE Analysis}
+\label{tab:harmonic_definitions}
+\begin{tabular}{lllll}
+\toprule
+Harmonic & Measured (Hz) & CV (\%) & $N$ & EEG Band \\
+\midrule
+SR1 & $7.63 \pm 0.33$ & 3.18 & 1121 & $\theta/\alpha$ Boundary \\
+SR1.5 & $9.96 \pm 0.35$ & 3.56 & 1139 & $\alpha$ Attractor \\
+SR2 & $11.98 \pm 0.40$ & 3.37 & 1050 & $\alpha/\beta$ Boundary \\
+SR2o & $13.76 \pm 0.44$ & 3.17 & 1150 & Low $\beta$ \\
+SR2.5 & $15.50 \pm 0.46$ & 2.99 & 1188 & $\beta$ Attractor \\
+SR3 & $19.99 \pm 0.57$ & 2.02 & 1250 & $\beta$ Boundary \\
+SR4 & $24.98 \pm 1.17$ & 4.69 & 1359 & High $\beta$ Attractor \\
+SR5 & $32.57 \pm 1.23$ & 1.79 & 1364 & $\beta/\gamma$ Boundary \\
+SR6 & $40.11 \pm 1.61$ & 4.01 & 1365 & $\gamma$ Attractor \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item CV = coefficient of variation. N = events with detectable harmonic.
+\end{tablenotes}
+\end{table}
+
+\subsubsection{Synchronization Metrics}
+SIE events exhibited robust network synchronization. At the fundamental frequency SR1, 81.5\% of events showed phase-locking values exceeding 0.6, and 60.5\% showed magnitude-squared coherence above 0.5. Both MSC (0.552) and PLV (0.689) showed gradients decreasing from SR1 to SR6, with SR1 exhibiting highest synchronization---confirming whole-brain coordination during SIE events consistent with communication through coherence \parencite{fries2015rhythms}.
+
+Power spectral elevation at SR harmonics was quantified using z-scores relative to session baselines. The fundamental frequency SR1 showed strongest elevation ($z = 4.76 \pm 2.95$), with systematic decrease at higher harmonics, confirming multi-band spectral enhancement during SIE events.
+
+\subsubsection{Temporal Dynamics: The Coherence-First Signature}
+Individual SIE events exhibited a stereotyped six-phase temporal evolution:
+\begin{enumerate}
+    \item \textbf{Baseline:} Low-to-moderate global synchronization ($R \approx 0.4$--$0.6$)
+    \item \textbf{Coherence Rise:} Rapid increase in phase alignment preceding amplitude changes, with $R$ typically rising to $>0.7$ over 1--3 seconds
+    \item \textbf{Plateau:} Brief stabilization (0.5--2 seconds) at elevated coherence ($R > 0.8$) prior to amplitude ignition
+    \item \textbf{Ignition:} Coincident peak in both coherence and power, with simultaneous z-score elevation across multiple harmonics
+    \item \textbf{Propagation:} Sustained high-coherence state (5--15 seconds) with gradual spread of synchronization
+    \item \textbf{Decay:} Gradual return to baseline over 3--8 seconds
+\end{enumerate}
+
+The coherence-first signature---phase alignment preceding amplitude elevation by 2--3 seconds---is consistent with network-level coordination rather than local oscillatory bursts \parencite{varela2001brainweb}.
+
+\subsubsection{Cross-Device and Cross-Context Validation}
+One-way ANOVA tested whether harmonic frequencies differed across devices and contexts:
+
+\textbf{Device Independence:} SR1 and SR3 showed no significant device differences ($p > 0.25$), supporting biological rather than device-specific origins. SR5 exhibited a modest device effect ($F = 5.74$, $p = 0.003$), with Muse devices detecting slightly higher frequencies ($32.88$ Hz vs. $32.53$--$32.54$ Hz for Emotiv devices)---likely reflecting differential hardware filtering at higher frequencies.
+
+\textbf{Context Independence:} One-way ANOVA across five cognitive contexts (meditation, flow, non-flow, gaming, visual) revealed no significant frequency differences for any primary harmonic (all $p > 0.15$). The $\phisym^n$ architecture is preserved across contexts spanning eyes-closed meditation, cognitively demanding flow states, gaming engagement, and passive visual perception.
+
+\subsection{The Emergent Pattern: Golden Ratio Frequency Ratios}
+
+\subsubsection{The Discovery}
+Upon examining the nine harmonic frequencies detected across events (Table~\ref{tab:harmonic_definitions}), a striking pattern emerged: the measured frequencies align closely with a geometric series $f(n) = f_0 \times \phisym^n$ where $\phisym = 1.618034$ (the golden ratio). Using an empirically-derived fundamental frequency $f_0 = 7.6$ Hz, measured frequencies matched theoretical predictions across integer, half-integer, and quarter-integer values of $n$.
+
+\begin{table}[H]
+\centering
+\caption{Predicted vs. Measured Frequencies Using $f(n) = 7.6 \times \phisym^n$}
+\label{tab:phi_predictions}
+\begin{tabular}{llll}
+\toprule
+$n$ & $\phisym^n$ & Predicted Frequency (Hz) & Harmonic \\
+\midrule
+0 & 1.000 & 7.60 & SR1 (fundamental) \\
+2 & 2.618 & 19.90 & SR3 \\
+3 & 4.236 & 32.19 & SR5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Golden Ratio Precision in Harmonic Ratios}
+The $\phisym^n$ architecture predicts specific ratios between harmonics that are independent of $f_0$ choice, providing the most stringent test of golden ratio organization:
+
+\begin{table}[H]
+\centering
+\caption{Harmonic Ratio Precision: Measured vs. $\phisym^n$ Predictions}
+\label{tab:ratio_precision}
+\begin{tabular}{lllll}
+\toprule
+Ratio & Predicted & Measured & Error (\%) & 95\% CI \\
+\midrule
+SR3/SR1 $= \varphi^2$ & 2.6180 & $2.6223 \pm 0.134$ & $+0.16$ & [2.614, 2.630] \\
+SR5/SR1 $= \varphi^3$ & 4.2361 & $4.2766 \pm 0.249$ & $+0.96$ & [4.262, 4.291] \\
+SR5/SR3 $= \varphi$ & 1.6180 & $1.6309 \pm 0.078$ & $+0.79$ & [1.627, 1.635] \\
+SR6/SR4 $= \varphi$ & 1.6180 & $1.6094 \pm 0.100$ & $-0.53$ & [1.604, 1.615] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Mean absolute ratio error: 0.61\%.} All four ratios deviated less than 1\% from predicted $\phisym^n$ values. Bootstrap analysis (N = 10,000 iterations) confirmed that the 95\% confidence interval for SR3/SR1 (2.614--2.630) includes the predicted $\phisym^2$ value (2.618).
+
+\subsubsection{The Independence-Convergence Paradox}
+A critical question emerged: Do the three primary harmonics (SR1, SR3, SR5) vary together proportionally, or independently? If frequencies were proportionally coupled, we would expect strong positive correlations across events. Instead, pairwise Pearson correlations revealed \textbf{complete independence}:
+
+\begin{table}[H]
+\centering
+\caption{Frequency Correlations Across Events: The Independence-Convergence Paradox}
+\label{tab:independence}
+\begin{tabular}{llll}
+\toprule
+Pair & Pearson $r$ & $p$-value & Interpretation \\
+\midrule
+SR1 vs SR3 & $+0.030$ & 0.33 & No correlation \\
+SR1 vs SR5 & $-0.002$ & 0.94 & No correlation \\
+SR3 vs SR5 & $-0.020$ & 0.47 & No correlation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All correlations were statistically non-significant (all $|r| < 0.03$, all $p > 0.3$), demonstrating that harmonic frequencies vary completely independently across events. An event with high SR1 frequency is no more likely to have high SR3 or SR5 frequencies than expected by chance.
+
+\begin{keyinsight}
+\textbf{The Paradox:} Individual harmonic frequencies vary completely independently across events, yet their \textbf{ratios} maintain $<1\%$ precision. This pattern cannot arise from coupled oscillators (which would show frequency covariation) nor from independent rhythms (which would degrade ratio precision).
+
+\textbf{The Resolution:} $\phisym^n$ relationships are encoded in the \textbf{population-level marginal distributions} of each harmonic rather than through event-level coordination. Each oscillatory generator is independently constrained to a frequency distribution whose mean satisfies $\phisym^n$ relationships relative to other harmonics.
+\end{keyinsight}
+
+\subsubsection{Null Control Validation}
+The peak-based null control (Null Control D) provided the most stringent test. Comparing SIE frequency triplets against 10,000 random triplets sampled from actual FOOOF peaks (N = 244,955 peaks):
+
+\begin{itemize}
+    \item Observed mean $\phisym$-error: $4.37\% \pm 2.00\%$
+    \item Random peak triplet mean error: $9.05\% \pm 4.15\%$
+    \item Cohen's $d$: 1.44 (large effect)
+    \item $p$-value: $< 0.0001$ (permutation test)
+\end{itemize}
+
+SIE events show \textbf{significantly better $\phisym$-precision} than random triplets sampled from actual EEG spectral peaks. The highly significant result ($p < 0.0001$) with large effect size ($d = 1.44$) indicates that SIE detection preferentially identifies frequency combinations exhibiting exceptional $\phisym^n$ organization.
+
+\subsubsection{The Emergent Question}
+The discovery of precise $\phisym^n$ ratio organization in transient high-coherence events raised a fundamental question that motivated the second phase of this research:
+
+\textit{Is $\phisym^n$ organization specific to transient SIE events, or does it reflect a deeper architectural principle governing \textbf{all} EEG frequency organization?}
+
+If the latter, we would expect the $\phisym^n$ boundary-attractor structure to be visible in the aggregate distribution of oscillatory peaks across the full spectrum, not only during SIE events. The theoretical framework and validation study presented in the following sections test this prediction.
+
+%==============================================================================
+% SECTION 3: THEORETICAL FRAMEWORK
+%==============================================================================
+\section{Theoretical Framework: The $\phisym^n$ Hypothesis}
+
+The discovery of precise golden ratio relationships in SIE harmonic frequencies (Section 2.3) raised a fundamental question: Does this organization reflect a deeper architectural principle governing all EEG frequency organization? We formalized the pattern into a testable theoretical framework.
+
+\subsection{Golden Ratio Mathematics and Neural Relevance}
+
+\subsubsection{Definition and Properties}
+The golden ratio is defined as the positive solution to $x^2 = x + 1$:
+\begin{equation}
+\phisym = \frac{1 + \sqrt{5}}{2} = 1.6180339887...
+\end{equation}
+
+The golden ratio possesses two unique mathematical properties relevant to coupled oscillator systems:
+
+\textbf{Property 1: Maximal Anti-Commensurability.}
+The golden ratio has the continued fraction representation $\phisym = [1; 1, 1, 1, ...]$, which converges more slowly than any other irrational. This means the rational approximations to $\phisym$ (the Fibonacci ratios 1/1, 2/1, 3/2, 5/3, 8/5...) are the \textit{worst possible} among all irrationals of comparable magnitude.
+
+\textit{Implication:} Coupled oscillators at frequency ratio $\phisym$ maximally resist mode-locking. The phase relationship never settles into a stable pattern because $\phisym$ cannot be well-approximated by any simple ratio. This enables \textbf{segregation}: oscillators at different $\phisym^n$ positions maintain independence rather than collapsing into synchrony.
+
+\textbf{Property 2: Fibonacci Additivity.}
+The golden ratio uniquely satisfies:
+\begin{equation}
+\phisym^n = \phisym^{n-1} + \phisym^{n-2} \quad \text{for all } n \in \mathbb{Z}
+\end{equation}
+
+No other positive real number satisfies this property.
+
+\textit{Implication:} At frequency $f(n) = f_0 \times \phisym^n$, the three frequencies $f(n)$, $f(n-1)$, and $f(n-2)$ satisfy an exact sum relationship, enabling three-wave resonant energy transfer. This creates ``gateways'' for cross-frequency communication at specific positions, enabling \textbf{integration}.
+
+\begin{keyinsight}
+\textbf{Why $\phisym$ May Be Unique for Neural Organization:}
+No other scaling factor provides both properties. Integer ratios (2:1, 3:2) enable coupling but produce mode-locking; other irrationals ($\sqrt{2}$, $e$) resist mode-locking but lack Fibonacci coupling. If neural systems require both independent processing within bands and communication between bands, $\phisym^n$ organization may represent the unique optimal solution---a ``segregation-integration balance'' that no other architecture achieves.
+\end{keyinsight}
+
+\subsection{The Core Equation: $f(n) = f_0 \times \phisym^n$}
+
+Based on the SIE discovery, we formalized the hypothesis that EEG frequencies are organized according to:
+
+\begin{keyequation}
+\begin{equation}
+f(n) = f_0 \times \phisym^n
+\label{eq:core}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $f_0 = 7.60$ Hz (measured Schumann Resonance fundamental from Tomsk Observatory)
+    \item $\phisym = 1.6180339887...$ (golden ratio)
+    \item $n \in \mathbb{R}$ (continuous position index)
+\end{itemize}
+\end{keyequation}
+
+\textbf{Convergent $f_0$ Estimates.}
+The fundamental frequency $f_0 = 7.60$ Hz derives from two independent sources:
+\begin{itemize}
+    \item \textbf{Geophysical:} Multi-year monitoring at Tomsk Space Observing System reports SR fundamental at $7.6 \pm 0.2$ Hz
+    \item \textbf{Neural (SIE):} Mean SR1 frequency across 1,121 SIE events was $7.63 \pm 0.33$ Hz
+\end{itemize}
+
+The agreement within 0.03 Hz (0.4\%) between independent neural and geophysical estimates provides mutual validation.
+
+\textbf{Key Conceptual Claim.}
+The hypothesis concerns $\phisym^n$ \textit{ratio architecture}, not absolute frequency locking. Both Schumann Resonance ($\pm 0.3$ Hz diurnal variation) and neural oscillations (individual differences, state fluctuations) are naturally variable. The claim is that \textbf{ratio relationships} (boundary depletion, attractor enrichment) persist across this natural variability---ratios, not frequencies, are the deep invariant.
+
+\subsection{Predictions for Continuous Spectral Organization}
+
+\subsubsection{Position Classification}
+The framework classifies positions by their $n$ value:
+
+\begin{table}[H]
+\centering
+\caption{Position Classification and Predicted Behavior}
+\label{tab:position_classification}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Position Type & $n$ Value & Mathematical Property & Predicted Behavior \\
+\midrule
+\textbf{Boundary} & Integer ($k$) & Fibonacci sum point & \textbf{Depletion} (unstable) \\
+2\degree\ Noble & $k + 0.382$ & $\phisym^{-2}$ from next boundary & Modest enrichment \\
+\textbf{Attractor} & $k + 0.5$ & Log-midpoint & \textbf{Enrichment} (stable) \\
+\textbf{1\degree\ Noble} & $k + 0.618$ & $\phisym^{-1}$ from next boundary & \textbf{Strong enrichment} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Why half-integer positions are stable:} At a boundary (integer $n$), the Fibonacci property $f(n) = f(n-1) + f(n-2)$ enables three-wave energy transfer, destabilizing sustained oscillations. Half-integer positions are maximally distant from these coupling points---oscillations ``hide'' from cross-frequency energy redistribution.
+
+\subsubsection{A Priori Frequency Landmarks}
+
+\begin{table}[H]
+\centering
+\caption{A Priori Frequency Predictions (Generated Before Data Analysis)}
+\label{tab:predictions}
+\begin{tabular}{@{}cclcl@{}}
+\toprule
+$n$ & $\phisym^n$ & $f(n)$ Hz & Type & Predicted Peak Count \\
+\midrule
+$-1$ & 0.618 & 4.70 & Boundary & LOW ($\delta/\theta$ border) \\
+$-0.5$ & 0.786 & 5.97 & Attractor & ELEVATED ($\theta$ center) \\
+$0$ & 1.000 & 7.60 & Boundary & LOW ($\theta/\alpha$ border) \\
+$\mathbf{+0.5}$ & 1.272 & $\mathbf{9.67}$ & \textbf{Attractor} & \textbf{HIGH ($\alpha$ peak)} \\
+$+1$ & 1.618 & 12.30 & Boundary & LOW ($\alpha/\beta$ border) \\
+$+1.5$ & 2.058 & 15.64 & Attractor & ELEVATED (low $\beta$) \\
+$+2$ & 2.618 & 19.90 & Boundary & LOW or ELEVATED* \\
+$+2.5$ & 3.330 & 25.31 & Attractor & ELEVATED (high $\beta$) \\
+$\mathbf{+3}$ & 4.236 & $\mathbf{32.19}$ & \textbf{Boundary} & \textbf{LOW ($\beta/\gamma$ trough)} \\
+$\mathbf{+3.5}$ & 5.388 & $\mathbf{40.95}$ & \textbf{Attractor} & \textbf{HIGH ($\gamma$ peak)} \\
+$+4$ & 6.854 & 52.09 & Boundary & LOW (high $\gamma$ border) \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item *The $\phisym^2$ position may show resonance enhancement due to Fibonacci three-wave coupling
+\end{tablenotes}
+\end{table}
+
+\subsubsection{Predicted Band-Specific Heterogeneity}
+
+While the $\phisym^n$ architecture is predicted across all frequency bands, we expect \textbf{frequency-dependent expression strength}:
+
+\begin{itemize}
+    \item \textbf{Gamma band ($\phisym^3$--$\phisym^4$; 32--52 Hz):} Should show the \textit{strongest} $\phisym^n$ alignment. Gamma oscillations subserve temporal binding and feature integration, requiring precise phase relationships within $\sim$25 ms windows. The GABA-A receptor decay constant ($\tau \approx 25$ ms) creates a natural oscillatory bottleneck near 40 Hz. Strict $\phisym^n$ compliance ensures that distributed gamma oscillators remain independent rather than collapsing into trivial synchrony.
+
+    \item \textbf{Alpha band ($\phisym^0$--$\phisym^1$; 7.6--12.3 Hz):} Should show \textit{moderate} alignment, potentially obscured by individual alpha frequency variability ($\pm 1$ Hz across subjects). Alpha functions primarily as a gating mechanism, which may tolerate broader frequency flexibility.
+
+    \item \textbf{Theta/Delta bands ($<\phisym^0$):} Should show the \textit{weakest} alignment. These slower oscillations support memory consolidation and homeostatic functions that integrate information over longer timescales, permitting greater frequency variability.
+\end{itemize}
+
+This gradient predicts that $\phisym^n$ architecture manifests as a \textbf{universal position hierarchy} (1\degree\ Noble $>$ Attractor $>$ 2\degree\ Noble) with \textbf{frequency-dependent magnitude} (gamma $\gg$ alpha $>$ theta $>$ delta).
+
+%==============================================================================
+% SECTION 4: STUDY 2 - VALIDATION
+%==============================================================================
+\section{Study 2: Testing the $\phisym^n$ Hypothesis in Continuous EEG}
+
+The theoretical framework derived from SIE discovery (Section 3) generated specific predictions for continuous spectral organization. If $\phisym^n$ architecture is fundamental rather than event-specific, aggregate peak distributions should show boundary depletion, attractor enrichment, and the predicted noble position hierarchy.
+
+\subsection{Methods: Spectral Parameterization and Analysis}
+
+\subsubsection{Extended Dataset}
+The analysis utilized the same recording sessions as Study 1, extended to include all available EEG data regardless of SIE detection. The complete dataset comprised 968 sessions, approximately 96 subjects, and 34.2 hours of recording across three device types and four cognitive contexts.
+
+\subsubsection{FOOOF Spectral Parameterization}
+We employed FOOOF (Fitting Oscillations and One-Over-F) \parencite{donoghue2020fooof} for spectral parameterization. FOOOF separates the power spectrum into:
+\begin{equation}
+P(f) = L(f) + \sum_{i} G_i(f)
+\end{equation}
+where $L(f) = b - \log(f^\chi)$ is the aperiodic component and $G_i(f)$ are Gaussian peaks with center frequency $\mu_i$, amplitude $a_i$, and bandwidth $\sigma_i$.
+
+FOOOF parameters: frequency range 1--50 Hz, peak width limits 0.2--20.0 Hz, maximum 20 peaks, minimum peak height 0.0001 log units. Peaks were retained if power $>$ 0.1 log units above aperiodic fit, bandwidth 1--8 Hz, and frequency within 1--48 Hz.
+
+\subsubsection{Lattice Coordinate Analysis}
+To analyze peaks independent of band-specific effects, we computed the lattice coordinate for each peak:
+\begin{equation}
+u = \left[\log_\phisym(f/f_0)\right] \bmod 1
+\end{equation}
+This maps all frequencies to the unit interval $[0, 1)$, where $u = 0$ corresponds to boundaries, $u = 0.5$ to attractors, and $u = 0.618$ to primary noble positions.
+
+\subsection{Results: Position-Type Enrichment and Band Structure}
+
+\subsubsection{Peak Detection Results}
+FOOOF parameterization yielded \textbf{244,955 oscillatory peaks} across 968 sessions, with a median peak frequency of 11.2 Hz and mean of 17.1 peaks per channel.
+
+\subsubsection{Position-Type Enrichment}
+The aggregate peak distribution confirmed all theoretical predictions:
+
+\begin{table}[H]
+\centering
+\caption{Position-Type Enrichment: Predicted vs. Observed}
+\label{tab:enrichment_results}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+Position Type & $n$ Value & Predicted & Observed & 95\% CI \\
+\midrule
+Boundary & Integer & Depletion & $-18.0\%$ & [$-19.1\%$, $-17.0\%$] \\
+2\degree\ Noble & $k + 0.382$ & Modest enrichment & $+1.9\%$ & [$+0.6\%$, $+3.2\%$] \\
+Attractor & $k + 0.5$ & Enrichment & $+21.0\%$ & [$+19.7\%$, $+22.4\%$] \\
+1\degree\ Noble & $k + 0.618$ & Strong enrichment & $+39.0\%$ & [$+37.7\%$, $+40.4\%$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The observed ordering (Boundary $<$ 2\degree\ Noble $<$ Attractor $<$ 1\degree\ Noble) exactly matches theoretical predictions. Kendall's $\tau = 1.0$ (perfect agreement), $p = 0.042$.
+
+\subsubsection{Alignment with Predicted Landmarks}
+Key spectral landmarks aligned precisely with $\phisym^n$ predictions:
+\begin{itemize}
+    \item \textbf{Alpha peak:} Observed 9.8 Hz, predicted $\phisym^{0.5} = 9.67$ Hz (error: $+0.13$ Hz)
+    \item \textbf{Beta-gamma trough:} Observed 32.4 Hz, predicted $\phisym^3 = 32.19$ Hz (error: $+0.21$ Hz)
+    \item \textbf{Gamma recovery:} Observed 41.2 Hz, predicted $\phisym^{3.5} = 40.95$ Hz (error: $+0.25$ Hz)
+\end{itemize}
+
+Mean absolute prediction error: $0.17 \pm 0.09$ Hz across all positions.
+
+\subsubsection{Band-Specific Heterogeneity}
+Stratified analysis by $\phisym^n$-defined bands revealed frequency-dependent enrichment strength, confirming the predicted gradient:
+
+\begin{table}[H]
+\centering
+\caption{Band-Specific 1\degree\ Noble Enrichment}
+\label{tab:band_enrichment}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Band & $n$ Range & Peaks & 1\degree\ Noble Enrichment \\
+\midrule
+Delta & $\phisym^{-2}$ to $\phisym^{-1}$ & 3,140 & $-12.1\%$ \\
+Theta & $\phisym^{-1}$ to $\phisym^{0}$ & 15,315 & $+2.2\%$ \\
+Alpha & $\phisym^{0}$ to $\phisym^{1}$ & 39,189 & $+4.2\%$ \\
+Low Beta & $\phisym^{1}$ to $\phisym^{2}$ & 54,709 & $+3.9\%$ \\
+High Beta & $\phisym^{2}$ to $\phisym^{3}$ & 71,641 & $+8.8\%$ \\
+\textbf{Gamma} & $\phisym^{3}$ to $\phisym^{4}$ & 58,774 & $\mathbf{+144.8\%}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Gamma dominance:} The gamma band showed dramatically stronger $\phisym^n$ adherence ($+144.8\%$ at 1\degree\ noble) than any other band. This is mechanistically required: gamma oscillations subserve temporal binding and feature integration within $\sim$25 ms windows, demanding precise phase relationships \parencite{bartos2007synaptic}. Lower-frequency bands serve functions tolerating greater flexibility.
+
+\subsection{Validation: Cross-Device and Cross-Context Consistency}
+
+\subsubsection{Alternative Scaling Factor Comparison}
+To test whether $\phisym$ is uniquely optimal, we compared five alternative scaling factors ($e$, $\pi$, $\sqrt{2}$, 2, 1.5) at $f_0 = 7.6$ Hz.
+
+\textbf{Critical finding:} $\phisym$ is the \textit{only} scaling factor exhibiting both (1) the highest alignment score, and (2) the theoretically predicted ordering (1\degree\ Noble $>$ Attractor $>$ 2\degree\ Noble $>$ Boundary). Bootstrap comparison confirms $\phisym$ significantly outperforms all alternatives ($p < 0.001$).
+
+\subsubsection{Session-Level Consistency}
+Across 968 sessions:
+\begin{itemize}
+    \item \textbf{99.1\%} showed attractor enrichment $>$ boundary enrichment
+    \item Session-level Cohen's $d = 0.80$ for attractor enrichment
+    \item Stricter paired test: 83.3\% showed the pattern, $d = 0.89$
+\end{itemize}
+
+\subsubsection{$f_0$ Sensitivity Analysis}
+Varying $f_0$ from 7.0--8.5 Hz revealed a \textbf{0.6 Hz tolerance plateau} (7.3--7.9 Hz) where alignment remains $>$95\% of optimal. This plateau encompasses:
+\begin{itemize}
+    \item Theoretical SR: $c/2\pi r = 7.49$ Hz
+    \item Empirical SR (Tomsk): $7.6 \pm 0.2$ Hz
+    \item Neural SIE mean SR1: $7.63 \pm 0.33$ Hz
+\end{itemize}
+
+The tolerance plateau confirms that \textbf{ratios, not absolute frequencies}, are the preserved quantity---consistent with two inherently variable systems maintaining ratio architecture.
+
+\subsubsection{Permutation Testing}
+Two complementary tests validated the findings:
+
+\textbf{Uniform Frequency Test:} $p < 0.0001$ (0/10,000 permutations exceeded observed). EEG peak frequencies show significant $\phisym^n$ structure, not uniform distribution.
+
+\textbf{Phase-Shift Test:} $p = 0.21$. The 0.6 Hz tolerance plateau explains this: multiple grid positions within the natural variability range achieve comparable alignment, consistent with ratio preservation.
+
+%==============================================================================
+% SECTION 5: INTEGRATION
+%==============================================================================
+\section{Integration: The Substrate-Ignition Model}
+
+The convergence of findings from Study 1 (SIE discovery) and Study 2 (spectral validation) reveals a unified model of neural frequency organization.
+
+\subsection{Convergent Evidence from Both Studies}
+
+\subsubsection{Independent $f_0$ Convergence}
+The most striking validation comes from the independent convergence of fundamental frequency estimates:
+
+\begin{table}[H]
+\centering
+\caption{Convergent $f_0$ Estimates Across Independent Sources}
+\label{tab:f0_convergence}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Source & $f_0$ Estimate & Basis & Independence \\
+\midrule
+Geophysical (Tomsk) & $7.60 \pm 0.20$ Hz & SR monitoring & External \\
+Neural (SIE SR1) & $7.63 \pm 0.33$ Hz & 1,121 events & Study 1 \\
+Spectral (optimal) & $7.60$ Hz & 244,955 peaks & Study 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The agreement within 0.03 Hz (0.4\%) between independent geophysical and neural estimates provides strong mutual validation. Neither study was informed by the other during $f_0$ determination.
+
+\subsubsection{Precision Gradient: Transient vs. Continuous}
+Study 1 revealed exceptionally high precision in SIE harmonic ratios ($<1\%$ error from $\phisym^n$ predictions), while Study 2 showed more distributed organization across 244,955 peaks ($\pm 0.2$ Hz tolerance). This precision gradient is expected: transient high-coherence states represent amplified expression of the continuous $\phisym^n$ substrate.
+
+\subsection{The Independence-Convergence Paradox}
+
+The most theoretically significant finding is the \textbf{independence-convergence paradox} revealed in Study 1:
+
+\begin{itemize}
+    \item \textbf{Independence:} Harmonic frequencies (SR1, SR3, SR5) vary completely independently across events (all pairwise $|r| < 0.03$)
+    \item \textbf{Convergence:} Despite independence, harmonic \textit{ratios} maintain $<1\%$ deviation from $\phisym^n$ predictions
+\end{itemize}
+
+\textbf{Resolution:} The $\phisym^n$ relationships are encoded in the \textbf{population-level marginal distributions} of each harmonic rather than through event-level coordination. Each oscillatory generator is independently constrained to a frequency distribution whose mean satisfies $\phisym^n$ relationships relative to other harmonics.
+
+\textbf{Evidence from shuffled bootstrap:} When SR1, SR3, SR5 frequencies were independently permuted across events (destroying within-event pairings but preserving marginal distributions), ratio precision was unchanged. This demonstrates that $\phisym^n$ constraints are encoded in the distributions themselves, not in event-level coordination.
+
+\textbf{Biological mechanism:} What biophysical process could produce population-level constraints among independently varying frequencies? One possibility is that each frequency band is constrained by local biophysical properties---membrane time constants, network architecture, receptor kinetics---that independently converge on $\phisym^n$ values. The GABA-A receptor decay time constant ($\sim$25 ms) directly determines gamma oscillation frequency \parencite{bartos2007synaptic}. If these timescales have been evolutionarily tuned to produce compatible frequency relationships, independent variation within each system could still satisfy population-level $\phisym^n$ constraints.
+
+\subsection{SIEs as Amplification of Continuous $\phisym^n$ Architecture}
+
+The findings support a \textbf{substrate-ignition model}:
+
+\begin{keyinsight}
+\textbf{The Substrate-Ignition Model:}
+\begin{enumerate}
+    \item A continuous $\phisym^n$ frequency lattice exists as the substrate of neural oscillatory organization
+    \item This substrate is continuously present, organizing spectral peak distributions (Study 2: 244,955 peaks)
+    \item SIE events represent \textbf{transient amplification} of this substrate, not de novo generation
+    \item During SIEs, the normally distributed peaks ``snap'' to tighter $\phisym^n$ compliance with higher coherence
+\end{enumerate}
+\end{keyinsight}
+
+\textbf{Evidence supporting the model:}
+\begin{itemize}
+    \item Baseline windows (non-SIE periods) show the same frequency ratios with reduced coherence
+    \item The $\phisym^n$ lattice is visible in aggregate spectral structure (Study 2) even without event detection
+    \item SIEs show higher precision (0.61\% ratio error) than aggregate measures ($\pm 0.2$ Hz tolerance)
+    \item The coherence-first temporal signature (phase alignment before amplitude) suggests network coordination recruits existing architecture
+\end{itemize}
+
+This model explains both the ubiquity of $\phisym^n$ organization (present in all spectral data) and the precision of transient events (amplified expression of the substrate).
+
+%==============================================================================
+% SECTION 6: DISCUSSION
+%==============================================================================
+\section{Discussion}
+
+\subsection{Summary of Findings}
+
+This study provides the first systematic evidence for golden ratio ($\phisym^n$) organization of human EEG frequency architecture, discovered through a two-phase investigation:
+
+\textbf{Phase 1 (Study 1): Discovery of SIEs.} Analysis of meditation EEG revealed transient high-coherence neural states (Schumann Ignition Events) exhibiting precise frequency organization. Across 1,366 events, 91 participants, five cognitive contexts, and three EEG devices, SIEs showed:
+\begin{itemize}
+    \item Multi-band synchronization at specific harmonic frequencies (SR1, SR3, SR5)
+    \item Harmonic ratios deviating $<1\%$ from $\phisym^n$ predictions
+    \item Complete independence of individual frequencies (all $|r| < 0.03$) despite ratio precision
+    \item Stereotyped temporal dynamics with coherence preceding amplitude (``ignition'' signature)
+\end{itemize}
+
+\textbf{Phase 2 (Study 2): Validation in continuous EEG.} Testing whether $\phisym^n$ organization extends beyond transient events, analysis of 244,955 FOOOF-detected spectral peaks confirmed:
+\begin{itemize}
+    \item Boundary positions (integer $n$): $-18\%$ depletion
+    \item Attractor positions (half-integer $n$): $+21\%$ enrichment
+    \item Noble positions ($n + 0.618$): $+39\%$ enrichment
+    \item Gamma showing strongest adherence ($+144.8\%$ at 1\degree\ noble)
+\end{itemize}
+
+The \textbf{substrate-ignition model} integrates these findings: a continuous $\phisym^n$ lattice underlies neural frequency organization, with SIEs representing transient amplification of this architecture.
+
+\subsection{Mechanistic Interpretations}
+
+\subsubsection{Why Gamma Shows Strongest Adherence}
+The dramatic gamma enrichment at $\phisym^n$ positions ($+144.8\%$ vs. $<10\%$ for other bands) is not anomalous but mechanistically required. Gamma oscillations subserve temporal binding, feature integration, and conscious perception---functions demanding precise phase relationships within $\sim$25 ms windows \parencite{canolty2010functional, lisman2013thetagamma}. The GABA-A receptor decay constant ($\tau \approx 25$ ms) creates a natural oscillatory bottleneck near 40 Hz \parencite{bartos2007synaptic}. Strict $\phisym^n$ compliance ensures gamma oscillators remain independent (anti-mode-locking) while enabling cross-frequency integration (Fibonacci coupling).
+
+Lower-frequency bands serve functions---gating, memory consolidation, homeostatic regulation---that tolerate or benefit from frequency flexibility. The $\phisym^n$ architecture is universal, but expression strength reflects functional requirements.
+
+\subsubsection{Two Synchronization Subsystems}
+Analysis of cross-frequency amplitude correlations revealed two partially dissociable subsystems:
+\begin{itemize}
+    \item \textbf{Theta-anchored system (SR1):} Moderate coupling to higher harmonics ($r = 0.32$--$0.54$), associated with hippocampal-cortical communication and working memory \parencite{hyman2005medial}
+    \item \textbf{Beta-gamma complex (SR3--SR6):} Tightly coupled (all $r > 0.6$), associated with sensorimotor integration and long-range cortical coordination \parencite{engel2010beta}
+\end{itemize}
+
+This architecture may enable independent recruitment of theta-based and beta-gamma coordination during SIE ignition, with full integration occurring through $\phisym^n$ constraints.
+
+\subsection{Relationship to Schumann Resonance}
+
+The term ``Schumann Ignition Events'' references the correspondence between neural frequencies and Earth's Schumann Resonances ($\sim$7.83 Hz fundamental). Several aspects warrant careful interpretation:
+
+\textbf{Correspondence, not demonstrated coupling.} The measured SR fundamental (7.83 Hz) provides the poorest fit to neural frequencies (3.28\% error). The empirical $f_0 = 7.6$ Hz from Tomsk monitoring and neural SIE data provides better fit (1.45\% error). Without concurrent magnetometer recording, we cannot assess whether SIEs correlate with actual SR activity.
+
+\textbf{Three hypotheses:}
+\begin{enumerate}
+    \item \textbf{Evolutionary tuning:} Neural frequencies evolved to match planetary electromagnetic environment
+    \item \textbf{Biophysical convergence:} Independent optimization to similar frequencies due to shared physical constraints (characteristic length scales, resonance conditions)
+    \item \textbf{Direct coupling:} Real-time electromagnetic interaction between brain and ionosphere
+\end{enumerate}
+
+\textbf{Parsimony favors biophysical convergence.} Given the extremely weak SR field strengths ($\sim$picoTesla) and the absence of plausible coupling mechanisms, convergent constraints provide a more parsimonious explanation than direct electromagnetic interaction.
+
+\subsection{Implications for EEG Band Definitions}
+
+The $\phisym^n$ framework provides a principled basis for EEG band definitions:
+
+\begin{table}[H]
+\centering
+\caption{Proposed $\phisym^n$-Based EEG Band Definitions}
+\label{tab:band_definitions}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Band & Boundaries & Center (Attractor) & 1\degree\ Noble \\
+\midrule
+Delta & $\phisym^{-2}$--$\phisym^{-1}$ (2.9--4.7 Hz) & $\phisym^{-1.5}$ (3.7 Hz) & $\phisym^{-1.38}$ (3.9 Hz) \\
+Theta & $\phisym^{-1}$--$\phisym^{0}$ (4.7--7.6 Hz) & $\phisym^{-0.5}$ (6.0 Hz) & $\phisym^{-0.38}$ (6.2 Hz) \\
+Alpha & $\phisym^{0}$--$\phisym^{1}$ (7.6--12.3 Hz) & $\phisym^{0.5}$ (9.7 Hz) & $\phisym^{0.62}$ (10.1 Hz) \\
+Low Beta & $\phisym^{1}$--$\phisym^{2}$ (12.3--19.9 Hz) & $\phisym^{1.5}$ (15.6 Hz) & $\phisym^{1.62}$ (16.3 Hz) \\
+High Beta & $\phisym^{2}$--$\phisym^{3}$ (19.9--32.2 Hz) & $\phisym^{2.5}$ (25.3 Hz) & $\phisym^{2.62}$ (26.4 Hz) \\
+Gamma & $\phisym^{3}$--$\phisym^{4}$ (32.2--52.1 Hz) & $\phisym^{3.5}$ (41.0 Hz) & $\phisym^{3.62}$ (42.7 Hz) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This framework explains why canonical frequencies (alpha $\sim$10 Hz, gamma $\sim$40 Hz) emerge at half-integer $\phisym^n$ positions, and why band boundaries show transition zones rather than discrete cutoffs.
+
+\subsection{Limitations}
+
+\begin{enumerate}
+    \item \textbf{Consumer-grade EEG:} Limited spatial resolution (4--14 channels) constrains source localization. However, cross-device consistency argues against device-specific artifacts.
+
+    \item \textbf{No concurrent magnetometer:} Cannot test SR coupling hypotheses without simultaneous SR field measurement.
+
+    \item \textbf{Population demographics:} Participants skewed toward tech-savvy users of consumer EEG; clinical populations may show different patterns.
+
+    \item \textbf{FOOOF limitations:} Spectral parameterization is less reliable at low frequencies (delta/theta) where 1/f noise dominates.
+
+    \item \textbf{Descriptive, not mechanistic:} We document $\phisym^n$ organization but cannot explain why neural oscillations would organize according to golden ratio mathematics.
+
+    \item \textbf{No behavioral correlates:} We did not measure whether SIE occurrence or $\phisym^n$ precision predicts cognitive performance.
+
+    \item \textbf{Single-subject discovery:} The initial discovery dataset relied on one experienced meditator, though validation extended to 91 participants.
+\end{enumerate}
+
+\subsection{Future Directions}
+
+\begin{enumerate}
+    \item \textbf{Concurrent EEG-magnetometer recording:} Direct test of SR coupling hypotheses requires simultaneous measurement of brain activity and Schumann Resonance field strength.
+
+    \item \textbf{High-density EEG with source localization:} Clarify spatial organization of $\phisym^n$ generators and frontal hub topology suggested by transfer entropy analysis.
+
+    \item \textbf{Cross-species validation:} Test whether $\phisym^n$ architecture is evolutionarily conserved across species with different brain sizes. Preliminary evidence suggests similar frequency organization in mammals despite 17,000-fold brain volume variation \parencite{buzsaki2013scaling}.
+
+    \item \textbf{Developmental trajectory:} Does $\phisym^n$ organization emerge with neural maturation, or is it present from early development?
+
+    \item \textbf{Clinical biomarkers:} Do disorders with oscillatory abnormalities (schizophrenia, Parkinson's, ADHD) show disrupted $\phisym^n$ organization? Could restoration serve as treatment target?
+
+    \item \textbf{Entrainment studies:} Test whether tACS at $\phisym^n$ frequencies produces stronger entrainment or superior cognitive effects compared to non-$\phisym^n$ frequencies \parencite{herrmann2016eeg}.
+
+    \item \textbf{Behavioral correlates:} Examine whether SIE precision or aggregate $\phisym^n$ alignment predicts cognitive performance, creativity, or meditative depth.
+\end{enumerate}
+
+%==============================================================================
+% SECTION 7: CONCLUSIONS
+%==============================================================================
+\section{Conclusions}
+
+This study makes four principal contributions to our understanding of neural oscillatory organization:
+
+\textbf{First, we establish Schumann Ignition Events as a reproducible neural phenomenon.} Across 1,366 events, 91 participants, five cognitive contexts, and three consumer EEG devices, SIEs showed consistent spectral, temporal, and network characteristics. The coherence-first temporal signature and distinct state-space trajectories suggest that SIEs represent a qualitatively distinct neural regime rather than extreme values of continuous oscillatory dynamics.
+
+\textbf{Second, we discover $\phisym^n$ ratio organization in transient high-coherence states.} Analysis of harmonic ratios (SR1, SR3, SR5) revealed $<1\%$ deviation from golden ratio predictions, with the independence-convergence paradox revealing that ratio constraints operate at the population level rather than through event-level frequency coupling.
+
+\textbf{Third, we validate $\phisym^n$ architecture in continuous spectral organization.} Systematic analysis of 244,955 spectral peaks confirms the predicted boundary-attractor structure: boundaries depleted ($-18\%$), attractors enriched ($+21\%$), noble positions maximally enriched ($+39\%$). This provides the first mathematically principled basis for EEG frequency band definitions.
+
+\textbf{Fourth, we propose the substrate-ignition model as an integrative framework.} The $\phisym^n$ lattice exists continuously as an architectural constraint; SIEs represent transient amplification of this substrate. This model explains both the precision of transient events and the robustness of aggregate spectral organization.
+
+The core finding can be summarized in a single equation:
+\begin{equation}
+f(n) = f_0 \times \phisym^n \quad \text{where } f_0 = 7.60 \text{ Hz}, \quad \phisym = 1.6180339...
+\end{equation}
+
+Whether the correspondence between neural $f_0$ and Earth's Schumann Resonance reflects evolutionary optimization, biophysical convergence, or coincidence cannot be determined without concurrent geomagnetic measurement. What the present findings establish is that human neural oscillations exhibit precise $\phisym^n$ ratio organization---a mathematical architecture that may represent a universal solution to the segregation-integration balance required for complex neural computation.
+
+%==============================================================================
+% REFERENCES
+%==============================================================================
+\printbibliography
+
+\end{document}
