@@ -80,20 +80,6 @@ Biological Cybernetics 116:479-504
 
 ---
 
-## Validation Methods
-
-The analysis employs five independent null controls:
-
-| Control | Method | Result |
-|---------|--------|--------|
-| **Temporal Shuffle** | Randomize event timing | Pattern destroyed (p < 0.001) |
-| **Random Triplets** | Sample arbitrary frequency triplets | 10× worse precision (d = 3.39) |
-| **Baseline Windows** | Extract peaks outside SIEs | φⁿ ratios present but degraded |
-| **Cross-Device** | Compare Muse vs Emotiv | Consistent architecture |
-| **Blind Clustering** | FOOOF + DBSCAN without SR specification | SR bands emerge unsupervised |
-
----
-
 ## Data Availability
 
 ### This Repository
