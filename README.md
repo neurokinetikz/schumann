@@ -1,7 +1,7 @@
 # Schumann Ignition Events: Golden Ratio Architecture in Human EEG
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18244908.svg)](https://doi.org/10.5281/zenodo.18244908)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 **Empirical discovery of φⁿ frequency organization in human neural oscillations, anchored to Schumann Resonance harmonics.**
@@ -174,9 +174,9 @@ Please open an issue or submit a pull request.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This work is licensed under a [Creative Commons Attribution 4.0 International License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
 
-Code is freely available for research and educational purposes.
+You are free to share and adapt this material for any purpose, including commercial use, provided you give appropriate attribution.
 
 ---
 
