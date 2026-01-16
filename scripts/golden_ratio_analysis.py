@@ -452,20 +452,21 @@ def create_peak_distribution_chart(peak_freqs_arr, title, subtitle, output_path)
                          edgecolor=color, linewidth=1.0))
 
     # φ^n reference lines with labels - including ALL position types
-    # Position types: boundary (k), ¼ (k+0.25), 2° noble (k+0.382), attractor (k+0.5), 1° noble (k+0.618)
+    # Position types: boundary (k), ¼ (k+0.25), 2° noble (k+0.382), attractor (k+0.5), 1° noble (k+0.618), ¾ (k+0.75)
     position_types = {
-        'boundary':  {'offset': 0.0,   'color': '#cc8800', 'style': '-',  'alpha': 0.6, 'lw': 1.5, 'label': 'Boundary (φ^n)'},
-        'quarter':   {'offset': 0.25,  'color': '#8888cc', 'style': '--', 'alpha': 0.3, 'lw': 0.8, 'label': '¼ (k+0.25)'},
-        'noble_2':   {'offset': 0.382, 'color': '#88aa44', 'style': '--', 'alpha': 0.5, 'lw': 1.0, 'label': '2° Noble (k+0.382)'},
-        'attractor': {'offset': 0.5,   'color': '#cc4444', 'style': '--', 'alpha': 0.5, 'lw': 1.2, 'label': 'Attractor (k+0.5)'},
-        'noble_1':   {'offset': 0.618, 'color': '#22aa88', 'style': ':',  'alpha': 0.6, 'lw': 1.5, 'label': '1° Noble (k+0.618)'},
+        'boundary':      {'offset': 0.0,   'color': '#cc8800', 'style': '-',  'alpha': 0.6, 'lw': 1.5, 'label': 'Boundary (φ^n)'},
+        'quarter':       {'offset': 0.25,  'color': '#8888cc', 'style': '--', 'alpha': 0.3, 'lw': 0.8, 'label': '¼ (k+0.25)'},
+        'noble_2':       {'offset': 0.382, 'color': '#88aa44', 'style': '--', 'alpha': 0.5, 'lw': 1.0, 'label': '2° Noble (k+0.382)'},
+        'attractor':     {'offset': 0.5,   'color': '#cc4444', 'style': '--', 'alpha': 0.5, 'lw': 1.2, 'label': 'Attractor (k+0.5)'},
+        'noble_1':       {'offset': 0.618, 'color': '#22aa88', 'style': ':',  'alpha': 0.6, 'lw': 1.5, 'label': '1° Noble (k+0.618)'},
+        'three_quarter': {'offset': 0.75,  'color': '#888888', 'style': '--', 'alpha': 0.4, 'lw': 0.8, 'label': '¾ (k+0.75)'},
     }
 
     # Draw lines for each position type with legend entries
     legend_handles = []
     for ptype, props in position_types.items():
         first_line = True
-        for k in range(-1, 4):  # Integer base positions
+        for k in range(-2, 4):  # Integer base positions (start at -2 to include delta band)
             n = k + props['offset']
             freq = F0 * (PHI ** n)
             if 1 < freq < 48:
@@ -490,7 +491,7 @@ def create_peak_distribution_chart(peak_freqs_arr, title, subtitle, output_path)
                            fontsize=6, color=props['color'], alpha=0.8)
 
     # Add legend
-    ax.legend(handles=legend_handles, loc='upper right', fontsize=8, framealpha=0.9)
+    ax.legend(handles=legend_handles, loc='lower right', fontsize=8, framealpha=0.9)
 
     ax.set_xlabel('Frequency (Hz)', fontsize=12)
     ax.set_ylabel('Peak Count', fontsize=12)

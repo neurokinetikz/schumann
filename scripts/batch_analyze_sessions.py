@@ -46,11 +46,11 @@ def list_csv_files(directory: str) -> List[str]:
     return sorted(glob.glob(pattern))
 
 
-def get_datasets() -> List[Tuple[str, str, List[str], int]]:
+def get_datasets() -> List[Tuple[str, str, List[str], int, float]]:
     """
     Get all configured datasets - replicates run_batch() configuration exactly.
 
-    Returns list of (filepath, device, electrodes, header) tuples.
+    Returns list of (filepath, device, electrodes, header, fs) tuples.
     """
     # Electrode configurations
     EPOC_ELECTRODES = ['EEG.AF3', 'EEG.F7', 'EEG.F3', 'EEG.FC5', 'EEG.P7',
@@ -61,7 +61,7 @@ def get_datasets() -> List[Tuple[str, str, List[str], int]]:
 
     datasets = []
 
-    # FILES (5 EPOC files, header=1)
+    # FILES (5 EPOC files, header=1, 128 Hz)
     for filepath in [
         'data/test schumann_EPOCX_111270_2023.04.23T14.50.35.05.00.md.pm.bp.csv',
         'data/20201229_29.12.20_11.27.57.md.pm.bp.csv',
@@ -69,25 +69,29 @@ def get_datasets() -> List[Tuple[str, str, List[str], int]]:
         'data/med_EPOCX_111270_2021.06.12T09.50.52.04.00.md.bp.csv',
         'data/binaural_EPOCX_111270_2021.06.17T10.04.52.04.00.md.bp.csv',
     ]:
-        datasets.append((filepath, 'emotiv', EPOC_ELECTRODES, 1))
+        datasets.append((filepath, 'emotiv', EPOC_ELECTRODES, 1, 128.0))
 
-    # PHYSF (data/PhySF/*.csv, EPOC format, header=0)
+    # PHYSF (data/PhySF/*.csv, EPOC format, header=0, 128 Hz)
     for filepath in list_csv_files("data/PhySF"):
-        datasets.append((filepath, 'emotiv', EPOC_ELECTRODES, 0))
+        datasets.append((filepath, 'emotiv', EPOC_ELECTRODES, 0, 128.0))
 
-    # INSIGHT (data/insight/*.csv, different electrodes, header=1)
+    # EMOTIONS (data/emotions/*.csv, EPOC format, header=0, 256 Hz)
+    for filepath in list_csv_files("data/emotions"):
+        datasets.append((filepath, 'emotiv', EPOC_ELECTRODES, 0, 256.0))
+
+    # INSIGHT (data/insight/*.csv, different electrodes, header=1, 128 Hz)
     for filepath in list_csv_files("data/insight"):
-        datasets.append((filepath, 'emotiv', INSIGHT_ELECTRODES, 1))
+        datasets.append((filepath, 'emotiv', INSIGHT_ELECTRODES, 1, 128.0))
 
-    # MUSE (data/muse/*.csv, muse format, header=0)
+    # MUSE (data/muse/*.csv, muse format, header=0, 128 Hz)
     for filepath in list_csv_files("data/muse"):
-        datasets.append((filepath, 'muse', MUSE_ELECTRODES, 0))
+        datasets.append((filepath, 'muse', MUSE_ELECTRODES, 0, 128.0))
 
     return datasets
 
 
 def run_analysis_on_file(filepath: str, device: str, electrodes: List[str],
-                         header: int, output_dir: str) -> Tuple[bool, str]:
+                         header: int, output_dir: str, fs: float = 128.0) -> Tuple[bool, str]:
     """
     Run analyze_ignition_custom.main() on a single file.
 
@@ -103,7 +107,8 @@ def run_analysis_on_file(filepath: str, device: str, electrodes: List[str],
             header=header,
             session_name=session_name,
             output_dir=output_dir,
-            show_plots=False  # Don't show plots in batch mode
+            show_plots=False,  # Don't show plots in batch mode
+            fs=fs
         )
         return True, session_name
     except Exception as e:
@@ -413,7 +418,7 @@ def main():
         cross_session_collector = CrossSessionNonSRCollector(freq_range=(1.0, 50.0))
 
     # Process each dataset
-    for i, (filepath, device, electrodes, header) in enumerate(datasets, 1):
+    for i, (filepath, device, electrodes, header, fs) in enumerate(datasets, 1):
         session_name = Path(filepath).stem
         session_dir = os.path.join(args.output, session_name)
 
@@ -434,7 +439,7 @@ def main():
 
             print(f"  Running EEG analysis...")
             success, result = run_analysis_on_file(
-                filepath, device, electrodes, header, args.output
+                filepath, device, electrodes, header, args.output, fs
             )
 
             if not success:

@@ -3445,7 +3445,7 @@ def export_to_csv(results: Dict, data_file: str, export_dir: str = "exports"):
 def main(data_file: str = None, device: str = 'emotiv',
          electrodes: List[str] = None, header: int = 1,
          session_name: str = None, output_dir: str = "exports",
-         show_plots: bool = True):
+         show_plots: bool = True, fs: float = 128.0):
     """Run ignition analysis on a single file.
 
     Args:
@@ -3456,6 +3456,7 @@ def main(data_file: str = None, device: str = 'emotiv',
         session_name: Name for output files (default: derived from filename)
         output_dir: Directory for all outputs (default: "exports")
         show_plots: Whether to display plots interactively (default: True)
+        fs: Sampling rate in Hz (default: 128.0)
     """
     from pathlib import Path
 
@@ -3480,13 +3481,13 @@ def main(data_file: str = None, device: str = 'emotiv',
     print(f"Output directory: {session_dir}")
 
     # Load data with device-specific handling
-    if device == 'emotiv' and electrodes is None and header == 1:
+    if device == 'emotiv' and electrodes is None and header == 1 and fs == 128.0:
         # Use legacy loader for backward compatibility with single-file mode
         df, timestamps, eeg_data = load_data(data_file)
-        actual_fs = FS
+        actual_fs = fs
     else:
         df, timestamps, eeg_data, actual_fs = load_data_for_device(
-            data_file, device=device, electrodes=electrodes, header=header, fs=FS
+            data_file, device=device, electrodes=electrodes, header=header, fs=fs
         )
     max_time = timestamps[-1]
     print(f"  Actual sample rate: {actual_fs:.1f} Hz")
