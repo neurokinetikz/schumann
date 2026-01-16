@@ -130,14 +130,14 @@ The φⁿ framework provides principled definitions for canonical EEG bands:
 If you use this code or findings in your research, please cite:
 
 ```bibtex
-@misc{neurokinetikz2026schumann,
-  author       = {neurokinetikz},
-  title        = {Golden Ratio Architecture of Human Neural Oscillations: 
-                  Schumann Ignition Events and φⁿ Frequency Organization},
+@misc{lacy2026golden,
+  author       = {Lacy, Michael},
+  title        = {Golden Ratio Architecture of Human Neural Oscillations:
+                  From Transient Discovery to Continuous Substrate},
   year         = {2026},
   publisher    = {Zenodo},
-  doi          = {10.5281/zenodo.18244908},
-  url          = {https://doi.org/10.5281/zenodo.18244908}
+  doi          = {10.5281/zenodo.18270615},
+  url          = {https://doi.org/10.5281/zenodo.18270615}
 }
 ```
 
