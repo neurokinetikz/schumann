@@ -16,17 +16,23 @@ This repository contains analysis code, data, and documentation for research dem
 
 Neural oscillation frequencies follow:
 
-$$f(n) = \frac{c}{r} \times \varphi^n$$
+$$f(n) = f_0 \times \varphi^n$$
+
+Where the fundamental frequency **f₀** is derived from physical constants:
+
+$$f_0 = \frac{c}{2\pi r} \approx 7.5 \text{ Hz}$$
+
+In angular frequency (radians/sec):
+
+$$\omega(n) = \frac{c}{r} \times \varphi^n$$
 
 Where:
 - **c** = speed of light (299,792,458 m/s)
-- **r** = Earth's mean radius (6,371,000 m)  
+- **r** = Earth's mean radius (6,371,000 m)
 - **φ** = golden ratio ((1 + √5)/2 ≈ 1.6180339...)
 - **n** = integer or half-integer index
 
-This yields **f₀ = c/r ≈ 7.6 Hz** — the Schumann Resonance fundamental frequency.
-
-**Critically, this equation has zero free parameters.** The frequency architecture is fully determined by fundamental physical constants.
+**Critically, this equation has zero free parameters.** The frequency architecture is fully determined by fundamental physical constants—f₀ emerges directly from the Schumann Resonance cavity equation.
 
 ---
 
