@@ -98,6 +98,10 @@ Biological Cybernetics 116:479-504
 
 ---
 
+## Demo
+See SIE detection in action with real EEG data: [neurokinetikz.com](https://neurokinetikz.com) 
+
+---
 
 ## Frequency Band Mapping
 
