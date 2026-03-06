@@ -21,3 +21,4 @@ session_exports/*
 *.out
 *.toc
 *.bcf
+papers/*
