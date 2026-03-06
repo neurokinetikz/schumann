@@ -13,3 +13,11 @@ session_exports/*
 *.npy
 *.vvp
 *.vcd
+*_legacy
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.bcf

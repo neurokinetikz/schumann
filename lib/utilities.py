@@ -31,6 +31,9 @@ from mne.time_frequency import psd_array_welch
 # Sampling rate and channel definitions
 FS = 128  # Hz (change if your CSV has a different rate)
 ELECTRODES = ['AF3','AF4','F7','F8','F3','F4','FC5','FC6','P7','P8','T7','T8','O1','O2']
+NEXUS32_ELECTRODES = ['Fp1','Fp2','F7','F3','Fz','F4','F8',
+                      'T7','C3','Cz','C4','T8',
+                      'P7','P3','Pz','P4','P8','O1','O2']
 BRAINWAVES = ['Delta','Theta','Alpha','BetaL','BetaH','Gamma']
 RANGES  = {'Delta':[1,4],'Theta':[4,8],'Alpha':[8,12],'BetaL':[12,16], 'BetaH':[16,25],'Gamma':[25,45]}
 
@@ -136,7 +139,7 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
     """Load CSV as in user's snippet and return a pre-processed DataFrame.
     Expects columns: 'Timestamp' (seconds or ms) and 'EEG.<electrode>' per channel.
     """
-    if device in ('emotiv', 'epoc', 'insight'):
+    if device in ('emotiv', 'epoc', 'insight', 'nexus32'):
         df = pd.read_csv(csv_path, low_memory=False, header=header)
         df['Timestamp'] = np.arange(len(df)) / fs
         df = df.sort_values(by=['Timestamp']).reset_index(drop=True)
@@ -192,14 +195,14 @@ def load_eeg_csv(csv_path, electrodes=ELECTRODES,device="emotiv",fs=128,header=1
         s = df[ch].astype(float)
         # Handle NaNs by forward/backward filling before filtering
         s = s.interpolate(limit_direction='both')
-        filt = butter_highpass(s.values, cutoff_hz=1.0, fs=FS, order=2)
+        filt = butter_highpass(s.values, cutoff_hz=1.0, fs=fs, order=2)
         df[f"{ch}.FILTERED"] = filt
         df[f"{ch}.FILTERED.POW"] = filt * filt
 
         # Band-pass per range, absolute & relative power, binary bins
         pow_cols = []
         for w, (f1, f2) in RANGES.items():
-            band_sig = butter_bandpass(filt, f1, f2, fs=FS, order=4)
+            band_sig = butter_bandpass(filt, f1, f2, fs=fs, order=4)
             band_col = f"{ch}.{w}"
             pow_col = f"POW.{ch}.{w}"
             df[band_col] = band_sig

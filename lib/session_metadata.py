@@ -117,6 +117,22 @@ def parse_session_metadata(filepath, dataset_name):
         metadata['context'] = 'meditation'
         metadata['subject'] = 'm1'
 
+    elif dataset_lower == 'arithmetic':
+        # Arithmetic EEG: NeXus-32, pattern "S<nn><condition>.csv"
+        # Experiment 1: S01–S21, conditions A/M/R
+        # Experiment 2: S10–S41, conditions A/B/R
+        metadata['device'] = 'nexus32'
+        condition_map = {
+            'A': 'arithmetic',
+            'M': 'meditation',
+            'B': 'baseline',
+            'R': 'rest',
+        }
+        if len(name_no_ext) >= 4 and name_no_ext[0].upper() == 'S':
+            metadata['subject'] = name_no_ext[:3]  # e.g. "S01"
+            cond_code = name_no_ext[3:]             # e.g. "A"
+            metadata['context'] = condition_map.get(cond_code, cond_code)
+
     # Prepend dataset name to subject for unique IDs across datasets
     if metadata['subject'] != 'unknown':
         metadata['subject'] = f"{metadata['dataset']}_{metadata['subject']}"
@@ -205,5 +221,13 @@ def get_dataset_config():
             'header': 1,
             'electrodes': 'muse',
             'pattern': '<device_id>_<timestamp>_<unix_ts>.csv'
+        },
+        'arithmetic': {
+            'default_device': 'nexus32',
+            'header': 0,
+            'electrodes': 'nexus32',
+            'pattern': 'S<subject><condition>.csv',
+            'conditions': {'A': 'arithmetic', 'M': 'meditation', 'B': 'baseline', 'R': 'rest'},
+            'fs': 256
         }
     }
